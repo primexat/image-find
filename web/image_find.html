@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Find · Product Images</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="app-layout">
+  <aside class="sidebar" aria-label="Main navigation">
+    <a class="sidebar-brand" href="#image-find"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg></span><span>image<span>find</span></span></a>
+    <nav class="sidebar-nav" aria-label="Tools">
+      <div class="sidebar-label">Workspace</div>
+      <a href="#image-find" data-view="image-find" aria-current="page"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg></span>Image Find</a>
+      <a href="#countries" data-view="countries"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M10 9v12M10 15h10"/></svg></span>Countries from Excel</a>
+      <a href="#ingredients" data-view="ingredients"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 10h14M5 15h9M5 20h9"/><circle cx="19" cy="19" r="2"/></svg></span>Ingredients</a>
+    </nav>
+    <div class="sidebar-footer"><strong>Image Find</strong>Product research tools on your computer.</div>
+  </aside>
+  <div class="app-content">
+  <header class="masthead"><div class="shell"><div class="brand">image<span>find</span></div><div class="header-actions"><button id="logoutButton" class="button logout" type="button">Log out</button></div></div></header>
+  <main class="shell">
+    <div id="imageFindView">
+    <div class="intro"><div class="eyebrow">SEARCH AND SAVE</div><h1 id="imageFindHeading" tabindex="-1">Find product images by code.</h1><p>Enter a folder, website URL, and product codes. Each line is one product, even when codes have different lengths.</p></div>
+    <div class="workspace">
+      <form class="panel form-panel" id="searchForm">
+        <h2>Search details</h2><p class="helper">Images are saved only after you select them from the results.</p>
+        <div class="field"><label for="destination">Image destination folder</label><input id="destination" type="text" required placeholder="Y:\05_CLIENTS\...\300+" autocomplete="off"><p class="helper">Use an absolute path on this computer. The folder is created when you save an image.</p></div>
+        <div class="field"><label for="baseUrl">Website URL</label><input id="baseUrl" type="url" required placeholder="https://shop.example.com/products" autocomplete="url"><p class="helper">Enter a homepage, category, or search page. The app searches for each code and checks its product page.</p></div>
+        <div class="field codes"><label for="codes">Product codes</label><textarea id="codes" required spellcheck="false" placeholder="103210&#10;105423&#10;105424"></textarea><p class="helper">One code per line. Blank lines are ignored; leading zeros are preserved.</p></div>
+        <div class="field"><label for="imageFormat">Save images as</label><select id="imageFormat"><option value="PNG">PNG</option><option value="JPG">JPG</option></select><p class="helper">You can change the format after finding images and before saving them.</p></div>
+        <button class="button primary" id="start" type="submit">Find images</button><div id="formMessage" class="message" role="status" aria-live="polite"></div>
+      </form>
+      <section class="panel results" aria-labelledby="resultsHeading">
+        <div class="results-head"><h2 id="resultsHeading">Results</h2><p id="progressText" class="helper">Start a search to see product images.</p><progress id="progress" class="progress" max="1" value="0" hidden></progress><div id="summary" class="summary" aria-live="polite"></div></div>
+        <div id="tools" class="tools" hidden><div class="filter"><label for="stateFilter">Status</label><select id="stateFilter"><option value="all">All</option><option value="review">Needs review</option><option value="missing">Not found</option><option value="skipped">Excluded</option><option value="saved">Saved</option><option value="error">Errors</option></select></div><div class="search"><label for="codeFilter">Filter by code</label><input id="codeFilter" type="text" placeholder="Enter a code" autocomplete="off"></div><button id="selectVisible" class="button" type="button">Select visible</button><button id="saveSelected" class="button" type="button" disabled>Save selected (0)</button><button id="saveAll" class="button save" type="button" disabled>Save all (0)</button></div>
+        <div id="items" class="list"><p class="empty">Results and image previews will appear here.</p></div><button id="showMore" class="button more" type="button" hidden>Show more</button>
+      </section>
+    </div>
+    <p class="footnote">“Save all” saves every image marked “Needs review” in the selected format, including filtered results. Excluded images are not saved. Some websites may require a login or block automated searches.</p>
+    </div>
+    <section id="countryView" hidden aria-labelledby="countryHeading">
+      <div class="intro"><div class="eyebrow">EXCEL AND PRODUCTS</div><h1 id="countryHeading" tabindex="-1">Find the country for each code.</h1><p>Upload a workbook with product codes and enter the website URL. The download keeps your workbook layout and fills the country column you choose.</p></div>
+      <div class="workspace">
+        <form class="panel form-panel" id="countryForm">
+          <h2>Search details</h2><p class="helper">The active sheet of an .xlsx file is used. Maximum: 2,000 codes.</p>
+          <div class="field"><label for="countryFile">Excel file with codes</label><input id="countryFile" type="file" accept=".xlsx" required><p class="helper">Codes may be numbers or text. Store codes as text in Excel to keep leading zeros.</p></div>
+          <div class="field"><label for="countryUrl">Website URL</label><input id="countryUrl" type="url" required placeholder="https://wt.group/en/home"><p class="helper">Use a homepage, search page, or product URL containing {code}.</p></div>
+          <div class="field"><label for="countryColumn">Code column (optional)</label><input id="countryColumn" type="text" placeholder="A or Code"><p class="helper">Leave blank to look for “Kodi”, “Code”, or “SKU”; otherwise column A is used.</p></div>
+          <div class="field"><label for="countryOutputColumn">Country column (optional)</label><input id="countryOutputColumn" type="text" placeholder="Country or D"><p class="helper">Enter an existing column name or letter. Leave blank to create a new “Country” column.</p></div>
+          <div class="field"><label for="countryLanguage">Country name language</label><select id="countryLanguage"><option value="EN">EN · English</option><option value="DE">DE · Deutsch</option></select><p class="helper">Choose the language used for country names in the workbook.</p></div>
+          <button class="button primary" id="countryStart" type="submit">Find countries</button><div id="countryMessage" class="message" role="status" aria-live="polite"></div>
+        </form>
+        <section class="panel results" aria-labelledby="countryResultsHeading"><div class="results-head"><h2 id="countryResultsHeading">Results</h2><p id="countryProgressText" class="helper">Upload a workbook to start a search.</p><progress id="countryProgress" class="progress" max="1" value="0" hidden></progress><div id="countrySummary" class="summary" aria-live="polite"></div><a id="countryDownload" class="button save" href="/api/country/download" download="product_countries.xlsx" hidden>Download Excel file</a></div><div id="countryResults" class="list"><p class="empty">Product codes and countries will appear here.</p></div></section>
+      </div>
+    </section>
+    <section id="ingredientsView" hidden aria-labelledby="ingredientsHeading">
+      <div class="intro"><div class="eyebrow">PRODUCT DETAILS</div><h1 id="ingredientsHeading" tabindex="-1">Find ingredients by product code.</h1><p>Enter product codes and a website URL. Image Find reads the text under “Zutaten” or “Ingredients” on verified product pages and exports the results to Excel.</p></div>
+      <div class="workspace">
+        <form class="panel form-panel" id="ingredientsForm">
+          <h2>Search details</h2><p class="helper">One product code per line, up to 2,000. The ingredient paragraph is copied in the website's original language.</p>
+          <div class="field"><label for="ingredientsUrl">Website URL</label><input id="ingredientsUrl" type="url" required placeholder="https://dantesse.com/" autocomplete="url"><p class="helper">Use a homepage, search page, sample product page, or URL containing {code}.</p></div>
+          <div class="field codes"><label for="ingredientsCodes">Product codes</label><textarea id="ingredientsCodes" required spellcheck="false" placeholder="105430&#10;105420"></textarea><p class="helper">Leading zeros are preserved in the Excel output.</p></div>
+          <button class="button primary" id="ingredientsStart" type="submit">Find ingredients</button><div id="ingredientsMessage" class="message" role="status" aria-live="polite"></div>
+        </form>
+        <section class="panel results" aria-labelledby="ingredientsResultsHeading"><div class="results-head"><h2 id="ingredientsResultsHeading">Results</h2><p id="ingredientsProgressText" class="helper">Start a search to see ingredients.</p><progress id="ingredientsProgress" class="progress" max="1" value="0" hidden></progress><div id="ingredientsSummary" class="summary" aria-live="polite"></div><a id="ingredientsDownload" class="button save" href="/api/ingredients/download" download="product_ingredients.xlsx" hidden>Download Excel file</a></div><div id="ingredientsResults" class="list"><p class="empty">Product codes and ingredient text will appear here.</p></div></section>
+      </div>
+    </section>
+  </main>
+  </div>
+  </div>
+  <dialog id="photoDialog" class="photo-dialog" aria-labelledby="photoDialogTitle"><div class="photo-dialog-head"><span id="photoDialogTitle"></span><button id="photoDialogClose" class="photo-dialog-close" type="button" aria-label="Close image">Close</button></div><img id="photoDialogImage" alt=""></dialog>
+  <script>
+    const $ = selector => document.querySelector(selector);
+    $('#logoutButton').addEventListener('click', async () => {
+      $('#logoutButton').disabled = true;
+      try { await fetch('/api/logout', {method:'POST'}); } finally { location.replace('/'); }
+    });
+    function checkSession(response) { if (response.status === 401) { location.replace('/login'); throw new Error('Session expired. Please log in.'); } return response; }
+    function changeView(moveFocus=false) {
+      const view=['#countries','#shtetet'].includes(location.hash)?'countries':location.hash==='#ingredients'?'ingredients':'image-find';
+      $('#imageFindView').hidden=view!=='image-find'; $('#countryView').hidden=view!=='countries'; $('#ingredientsView').hidden=view!=='ingredients';
+      for (const link of document.querySelectorAll('.sidebar-nav a[data-view]')) {
+        if (link.dataset.view===view) link.setAttribute('aria-current','page');
+        else link.removeAttribute('aria-current');
+      }
+      document.title=view==='countries'?'Countries from Excel · Image Find':view==='ingredients'?'Ingredients · Image Find':'Image Find · Product Images';
+      if (moveFocus) $(view==='countries'?'#countryHeading':view==='ingredients'?'#ingredientsHeading':'#imageFindHeading').focus();
+    }
+    window.addEventListener('hashchange',()=>changeView(true)); changeView();
+    const selected = new Set();
+    function showPhoto(item) { $('#photoDialogTitle').textContent=`Image for code ${item.code}`; $('#photoDialogImage').src=item.preview; $('#photoDialogImage').alt=`Full-size image for code ${item.code}`; $('#photoDialog').showModal(); }
+    $('#photoDialogClose').addEventListener('click',()=>$('#photoDialog').close());
+    $('#photoDialog').addEventListener('click',event=>{ if (event.target===$('#photoDialog')) $('#photoDialog').close(); });
+    let snapshot = {running:false, done:0, total:0, items:[]}, visibleLimit = 60, lastSignature = '';
+    const labels = {waiting:'Pending', review:'Needs review', missing:'Not found', skipped:'Excluded', saved:'Saved', exists:'Already exists', error:'Error'};
+    async function post(url, data) { const response = checkSession(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})); if (!response.headers.get('Content-Type')?.includes('application/json')) throw new Error(response.status===404?'The server is running an older version. Save any pending images and restart the app.':'The server returned an invalid response.'); const body = await response.json(); if (!response.ok) throw new Error(body.message || 'The request failed.'); return body; }
+    function message(value, isError=false) { const element=$('#formMessage'); element.textContent=value; element.classList.toggle('error',isError); }
+    function filteredItems() { const state=$('#stateFilter').value, query=$('#codeFilter').value.trim().toLowerCase(); return snapshot.items.filter(item => (state==='all' || item.state===state || (state==='saved' && item.state==='exists')) && item.code.toLowerCase().includes(query)); }
+    function updateSaveButton() { for (const index of [...selected]) if (snapshot.items[index]?.state !== 'review') selected.delete(index); const busy=snapshot.running||snapshot.saving; const available=snapshot.items.filter(item=>item.state==='review').length; $('#saveSelected').disabled=selected.size===0||busy; $('#saveSelected').textContent=`Save selected (${selected.size})`; $('#saveAll').disabled=available===0||busy; $('#saveAll').textContent=`Save all (${available})`; }
+    function render() {
+      $('#start').disabled=snapshot.running||snapshot.saving; $('#tools').hidden=snapshot.total===0; $('#progress').hidden=snapshot.total===0; $('#progress').max=snapshot.total||1; $('#progress').value=snapshot.done;
+      $('#progressText').textContent=snapshot.total ? `${snapshot.done} of ${snapshot.total} codes checked${snapshot.running ? ' · Searching…' : snapshot.saving ? ' · Saving images…' : ' · Complete'}` : 'Start a search to see product images.';
+      const counts={}; for (const item of snapshot.items) counts[item.state]=(counts[item.state]||0)+1;
+      const summary=$('#summary'); summary.replaceChildren();
+      for (const [key,text] of [['review','Needs review'],['saved','Saved'],['missing','Not found'],['skipped','Excluded'],['error','Errors']]) { const count=key==='saved' ? (counts.saved||0)+(counts.exists||0) : counts[key]||0; if (!count) continue; const badge=document.createElement('span'); badge.className=key==='review'||key==='saved'?'found':key==='missing'||key==='error'?'missing':'excluded'; badge.textContent=`${text}: ${count}`; summary.append(badge); }
+      updateSaveButton(); const filtered=filteredItems(), list=$('#items'); list.replaceChildren();
+      if (!snapshot.total || !filtered.length) { const empty=document.createElement('p'); empty.className='empty'; empty.textContent=snapshot.total?'No results match this filter.':'Results and image previews will appear here.'; list.append(empty); }
+      for (const item of filtered.slice(0,visibleLimit)) list.append(createItem(item));
+      $('#showMore').hidden=filtered.length<=visibleLimit; $('#selectVisible').disabled=snapshot.running||snapshot.saving||!filtered.slice(0,visibleLimit).some(item=>item.state==='review');
+    }
+    function createItem(item) {
+      const article=document.createElement('article'); article.className='item'; const preview=document.createElement(item.preview?'button':'div'); preview.className='preview';
+      if (item.preview) { preview.type='button'; preview.setAttribute('aria-label',`Enlarge image for code ${item.code}`); preview.addEventListener('click',()=>showPhoto(item)); const img=document.createElement('img'); img.src=item.preview; img.alt=''; img.loading='lazy'; preview.append(img); } else preview.textContent=item.state==='missing'?'No image':'Pending';
+      const info=document.createElement('div'); info.className='item-info'; const top=document.createElement('div'); top.className='item-top'; const code=document.createElement('span'); code.className='code'; code.textContent=item.code; const badge=document.createElement('span'); badge.className=`badge ${item.state}`; badge.textContent=labels[item.state]||item.state; top.append(code,badge); info.append(top);
+      const detail=document.createElement('p'); detail.textContent=item.message; info.append(detail);
+      if (item.url) { const link=document.createElement('a'); link.href=item.url; link.target='_blank'; link.rel='noopener noreferrer'; link.textContent='Open product page'; info.append(link); }
+      if (item.state==='review'||item.state==='skipped') { const actions=document.createElement('div'); actions.className='item-actions';
+        if (item.state==='review') { const label=document.createElement('label'), checkbox=document.createElement('input'); checkbox.type='checkbox'; checkbox.checked=selected.has(item.index); checkbox.setAttribute('aria-label',`Save image for code ${item.code}`); checkbox.addEventListener('change',()=>{ checkbox.checked?selected.add(item.index):selected.delete(item.index); updateSaveButton(); }); label.append(checkbox,document.createTextNode('Save this image')); actions.append(label); }
+        const button=document.createElement('button'); button.type='button'; button.textContent=item.state==='review'?'Exclude':'Restore for review'; button.addEventListener('click',async()=>{ try { await post('/api/review',{index:item.index,action:item.state==='review'?'skip':'reopen'}); selected.delete(item.index); await poll(true); } catch(error) { message(error.message,true); } }); actions.append(button); info.append(actions); }
+      article.append(preview,info); return article;
+    }
+    async function poll(force=false) { try { const response=checkSession(await fetch('/api/status',{cache:'no-store'})); if (!response.ok) throw new Error('Could not read the current status.'); const next=await response.json(); const signature=`${next.running}:${next.saving}:${next.done}:${next.total}:${next.items.map(item=>item.state).join(',')}`; snapshot=next; if (force||signature!==lastSignature) { lastSignature=signature; render(); } } catch { message('Could not connect to the local server.',true); } }
+    $('#searchForm').addEventListener('submit',async event=>{ event.preventDefault(); message(''); const codes=$('#codes').value, count=codes.split(/\r?\n/).filter(line=>line.trim()).length; if (!count) { message('Enter at least one code.',true); $('#codes').focus(); return; } try { await post('/api/start',{destination:$('#destination').value,base_url:$('#baseUrl').value,codes}); selected.clear(); visibleLimit=60; $('#stateFilter').value='all'; $('#codeFilter').value=''; message(`Search started for ${count} ${count===1?'code':'codes'}.`); await poll(true); } catch(error) { message(error.message,true); } });
+    $('#stateFilter').addEventListener('change',()=>{ visibleLimit=60; render(); }); $('#codeFilter').addEventListener('input',()=>{ visibleLimit=60; render(); }); $('#showMore').addEventListener('click',()=>{ visibleLimit+=60; render(); });
+    $('#selectVisible').addEventListener('click',()=>{ for (const item of filteredItems().slice(0,visibleLimit)) if (item.state==='review') selected.add(item.index); render(); });
+    $('#saveSelected').addEventListener('click',async()=>{ if (!selected.size) return; try { $('#saveSelected').disabled=true; const result=await post('/api/save',{indexes:[...selected],format:$('#imageFormat').value}); selected.clear(); message(`${result.saved} images saved as ${$('#imageFormat').value}. ${result.existing} already existed and were not overwritten.`); await poll(true); } catch(error) { message(error.message,true); updateSaveButton(); } });
+    $('#saveAll').addEventListener('click',async()=>{ if ($('#saveAll').disabled) return; try { $('#saveAll').disabled=true; message('Saving all found images…'); const result=await post('/api/save-all',{format:$('#imageFormat').value}); selected.clear(); message(`${result.saved} images saved as ${$('#imageFormat').value}. ${result.existing} already existed and were not overwritten.`); await poll(true); } catch(error) { message(error.message,true); await poll(true); } });
+    function syncResultRows(list, items, cache, createRow, emptyText) {
+      if (!items.length) {
+        if (cache.rows.length || !list.querySelector('.empty')) { const empty=document.createElement('p'); empty.className='empty'; empty.textContent=emptyText; list.replaceChildren(empty); }
+        cache.rows=[]; cache.keys=[]; return;
+      }
+      if (cache.rows.length!==items.length || items.some((item,index)=>cache.rows[index].dataset.code!==item.code)) {
+        const fragment=document.createDocumentFragment();
+        cache.rows=[]; cache.keys=[];
+        for (const item of items) { const row=createRow(item); row.dataset.code=item.code; cache.rows.push(row); cache.keys.push(JSON.stringify(item)); fragment.append(row); }
+        list.replaceChildren(fragment);
+        return;
+      }
+      items.forEach((item,index)=>{
+        const key=JSON.stringify(item);
+        if (key===cache.keys[index]) return;
+        const row=createRow(item); row.dataset.code=item.code;
+        cache.rows[index].replaceWith(row); cache.rows[index]=row; cache.keys[index]=key;
+      });
+    }
+    function createCountryRow(item) {
+      const row=document.createElement('div'); row.className='country-row';
+      const code=document.createElement('strong'); code.textContent=item.code;
+      const country=document.createElement('span'); country.textContent=`${item.country||'—'} · ${item.status}`;
+      row.append(code,country);
+      if (item.url) { const link=document.createElement('a'); link.href=item.url; link.target='_blank'; link.rel='noopener noreferrer'; link.textContent='Open product page'; row.append(link); }
+      return row;
+    }
+    function createIngredientRow(item) {
+      const row=document.createElement('article'); row.className='ingredient-row';
+      const top=document.createElement('div'); top.className='item-top';
+      const code=document.createElement('span'); code.className='code'; code.textContent=item.code;
+      const badge=document.createElement('span'); badge.className=`badge ${item.status==='Found'?'review':item.status==='Pending'?'waiting':'missing'}`; badge.textContent=item.status;
+      top.append(code,badge); row.append(top);
+      if (item.ingredients) { const detail=document.createElement('p'); detail.textContent=item.ingredients; row.append(detail); }
+      if (item.url) { const link=document.createElement('a'); link.href=item.url; link.target='_blank'; link.rel='noopener noreferrer'; link.textContent='Open product page'; row.append(link); }
+      return row;
+    }
+    const countryRowCache={rows:[],keys:[]}, ingredientRowCache={rows:[],keys:[]};
+    let lastCountrySignature='';
+    async function pollCountry(force=false) {
+      try {
+        const response=checkSession(await fetch('/api/country/status',{cache:'no-store'})); if (!response.ok) { if (response.status===404) { $('#countryMessage').textContent='The server is running an older version. Save any pending images and restart the app.'; $('#countryMessage').classList.add('error'); } return; }
+        const state=await response.json(); const signature=`${state.running}:${state.done}:${state.total}:${state.ready}:${state.error}`;
+        if (!force && signature===lastCountrySignature) return; lastCountrySignature=signature;
+        $('#countryStart').disabled=state.running; $('#countryProgress').hidden=!state.total; $('#countryProgress').max=state.total||1; $('#countryProgress').value=state.done;
+        $('#countryProgressText').textContent=state.total?`${state.done} of ${state.total} codes checked${state.running?' · Searching…':' · Complete'}`:'Upload a workbook to start a search.';
+        const found=state.results.filter(item=>item.status==='Found').length;
+        $('#countrySummary').textContent=state.total?`Country found for ${found} of ${state.total} codes.`:'';
+        $('#countryDownload').hidden=!state.ready;
+        if (state.error) { $('#countryMessage').textContent=state.error; $('#countryMessage').classList.add('error'); }
+        syncResultRows($('#countryResults'),state.results,countryRowCache,createCountryRow,'Product codes and countries will appear here.');
+      } catch { $('#countryMessage').textContent='Could not connect to the local server.'; $('#countryMessage').classList.add('error'); }
+    }
+    $('#countryForm').addEventListener('submit',async event=>{
+      event.preventDefault(); const file=$('#countryFile').files[0]; if (!file) return;
+      if (file.size>10*1024*1024) { $('#countryMessage').textContent='The Excel file must be 10 MB or smaller.'; $('#countryMessage').classList.add('error'); return; }
+      $('#countryMessage').textContent='Uploading workbook…'; $('#countryMessage').classList.remove('error'); $('#countryStart').disabled=true;
+      try {
+        const bytes=new Uint8Array(await file.arrayBuffer()); let binary='';
+        for (let i=0;i<bytes.length;i+=32768) binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+        await post('/api/country/start',{file:btoa(binary),base_url:$('#countryUrl').value,column:$('#countryColumn').value,output_column:$('#countryOutputColumn').value,language:$('#countryLanguage').value});
+        $('#countryMessage').textContent='Search started.'; lastCountrySignature=''; await pollCountry(true);
+      } catch(error) { $('#countryMessage').textContent=error.message; $('#countryMessage').classList.add('error'); $('#countryStart').disabled=false; }
+    });
+    let lastIngredientSignature='';
+    async function pollIngredients(force=false) {
+      try {
+        const response=checkSession(await fetch('/api/ingredients/status',{cache:'no-store'}));
+        if (!response.ok) throw new Error('Could not read ingredient results.');
+        const state=await response.json();
+        const signature=`${state.running}:${state.done}:${state.total}:${state.ready}:${state.error}`;
+        if (!force && signature===lastIngredientSignature) return;
+        lastIngredientSignature=signature;
+        $('#ingredientsStart').disabled=state.running;
+        $('#ingredientsProgress').hidden=!state.total;
+        $('#ingredientsProgress').max=state.total||1;
+        $('#ingredientsProgress').value=state.done;
+        $('#ingredientsProgressText').textContent=state.total?`${state.done} of ${state.total} codes checked${state.running?' · Searching…':' · Complete'}`:'Start a search to see ingredients.';
+        const found=state.results.filter(item=>item.status==='Found').length;
+        $('#ingredientsSummary').textContent=state.total?`Ingredients found for ${found} of ${state.total} codes.`:'';
+        $('#ingredientsDownload').hidden=!state.ready;
+        if (state.error) { $('#ingredientsMessage').textContent=state.error; $('#ingredientsMessage').classList.add('error'); }
+        syncResultRows($('#ingredientsResults'),state.results,ingredientRowCache,createIngredientRow,'Product codes and ingredient text will appear here.');
+      } catch(error) { $('#ingredientsMessage').textContent=error.message||'Could not connect to the local server.'; $('#ingredientsMessage').classList.add('error'); }
+    }
+    $('#ingredientsForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      $('#ingredientsMessage').textContent=''; $('#ingredientsMessage').classList.remove('error');
+      try {
+        await post('/api/ingredients/start',{codes:$('#ingredientsCodes').value,base_url:$('#ingredientsUrl').value});
+        $('#ingredientsMessage').textContent='Search started.';
+        lastIngredientSignature=''; await pollIngredients(true);
+      } catch(error) { $('#ingredientsMessage').textContent=error.message; $('#ingredientsMessage').classList.add('error'); }
+    });
+    async function initialize() {
+      try {
+        const responses=await Promise.all(['/api/status','/api/country/status','/api/ingredients/status'].map(url=>fetch(url,{cache:'no-store'}).then(checkSession)));
+        const [photo,country,ingredients]=await Promise.all(responses.map(response=>response.json()));
+        const keepCompletedIngredients=ingredients.ready && !ingredients.running && ingredients.total>0 && photo.total===0 && country.total===0;
+        if (!keepCompletedIngredients) await post('/api/reset',{});
+        selected.clear(); lastSignature=''; lastCountrySignature=''; lastIngredientSignature='';
+      }
+      catch(error) { $('#countryMessage').textContent=error.message; $('#countryMessage').classList.add('error'); }
+      await pollCountry(true); await pollIngredients(true); await poll(true);
+      setInterval(pollCountry,1000); setInterval(pollIngredients,1000); setInterval(poll,850);
+    }
+    initialize();
+  </script>
+</body>
+</html>

@@ -7,10 +7,20 @@ Mjet web lokal për të gjetur dhe ruajtur foto produktesh nga faqe të ndryshme
 Nga ky folder, hap `start_image_find.cmd`, ose përdor:
 
 ```powershell
-python dantesse_web.py
+python image_find.py
 ```
 
 Pastaj hap [http://127.0.0.1:8766](http://127.0.0.1:8766). Programi dëgjon vetëm në kompjuterin lokal.
+
+## Shtetet nga Excel
+
+Në sidebar, hap **Shtetet nga Excel**. Ngarko një skedar `.xlsx` me kodet, jep linkun e webfaqes dhe kliko **Gjej shtetet**. Programi lexon fletën aktive dhe kërkon kolonën me titull `Kodi`, `Code` ose `SKU`; mund të shkruash edhe shkronjën ose titullin e kolonës, p.sh. `KOD`. Nëse nuk gjen titull, përdor kolonën A. Shkruaj edhe emrin e kolonës ku duhet të plotësohet shteti; nëse e lë bosh, krijohet kolona e re `Shteti`. Zgjidh **EN** ose **DE** për gjuhën e emrave të shteteve në Excel.
+
+Kur kërkimi përfundon, kliko **Shkarko Excel-in**. Skedari i shkarkuar ruan fletët, kolonat dhe formatimin e Excel-it hyrës, përfshirë ngjyrat, stilet, gjerësitë e kolonave dhe tabelat. Kolona e re e shtetit merr formatimin e kolonës ngjitur. Nëse shteti nuk verifikohet, vlera ekzistuese në atë qelizë ruhet. Te Dantesse, shkurtesat e vendit në kategorinë e produktit, si `(BE)`, kthehen në emrin e shtetit në gjuhën e zgjedhur. Rezultatet e gjetura ruhen përkohësisht në kujtesë për një orë, kështu që kërkimi i përsëritur ose ndërrimi i gjuhës është shumë më i shpejtë pa e rinisur serverin. Kodet me zero në fillim duhet të jenë tekst në Excel që zerot të ruhen. Rifreskimi i faqes pastron rezultatet dhe anulon kërkimin aktiv.
+
+## Përbërësit (Zutaten)
+
+Në sidebar hap **Ingredients**, shkruaj linkun e webfaqes dhe kodet e produkteve (një për rresht), pastaj kliko **Find ingredients**. Programi verifikon kodin në faqen e produktit dhe merr tekstin poshtë titullit `Zutaten` ose `Ingredients`. Të gjitha rezultatet shfaqen në faqe, pa kufirin e mëparshëm prej 80 rreshtash. Kur kërkimi përfundon, kliko **Download Excel file** për të marrë kodin, përbërësit, statusin dhe linkun e produktit. Teksti i përbërësve ruhet në gjuhën që përdor faqja. Rifreskimi anulon kërkimin aktiv; një kërkim i përfunduar i Ingredients ruhet gjatë rifreskimit kur nuk ka rezultate në kategoritë e tjera.
 
 ## Përdorimi
 
@@ -27,7 +37,7 @@ Pastaj hap [http://127.0.0.1:8766](http://127.0.0.1:8766). Programi dëgjon vet�
 4. Kliko **Gjej fotot**. Programi kontrollon faqen e produktit dhe kërkon foton në të dhënat e produktit, në metadata ose në figurat e faqes. Për Dantesse, kërkon edhe referencën e saktë të kodit: një foto e mbetur në server nuk mjafton për ta quajtur produktin të gjetur.
 5. Shiko pamjet paraprake. Kliko **Ruaj të gjitha** për t'i ruajtur të gjitha fotot e gjetura me një klikim, ose zgjidh disa dhe kliko **Ruaj të zgjedhurat**. Për foto me disa produkte ose variante ngjyrash, kliko **Lëre jashtë** para ruajtjes masive; fotot e përjashtuara nuk ruhen.
 
-Çdo foto konvertohet dhe ruhet si PNG me emrin e kodit (`103210.png`). Për kodet me `/`, kjo shenjë kodohet në emrin e skedarit (p.sh. `209%2F24.png`). Nëse skedari ekziston, programi nuk e mbishkruan. Produktet që nuk gjenden, fotot e përjashtuara dhe gabimet nuk ruhen. Rezultatet e kërkimit qëndrojnë në kujtesë deri sa ta mbyllësh programin ose të nisësh një kërkim të ri.
+Para ruajtjes zgjidh formatin **PNG** ose **JPG**; mund ta ndryshosh edhe pasi të gjenden fotot. Skedarët marrin emrin e kodit (`103210.png` ose `103210.jpg`). Për kodet me `/`, kjo shenjë kodohet në emrin e skedarit (p.sh. `209%2F24.jpg`). Fotot me transparencë marrin sfond të bardhë kur ruhen si JPG. Nëse skedari ekziston në formatin e zgjedhur, programi nuk e mbishkruan. Produktet që nuk gjenden, fotot e përjashtuara dhe gabimet nuk ruhen. Rezultatet e kërkimit qëndrojnë në kujtesë deri sa ta mbyllësh programin ose të nisësh një kërkim të ri.
 
 Faqet e internetit kanë struktura të ndryshme. Programi kontrollon HTML-në dhe, kur rezultatet ngarkohen me JavaScript, përdor Chromium për të gjetur kartën me kodin e saktë. Nëse webfaqja kërkon hyrje ose nuk lejon kërkim automatik, nuk ruan foto pa verifikim.
 

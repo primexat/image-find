@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login · Image Find</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="login-page">
+  <main class="login-layout">
+    <div class="auth-shell">
+      <section class="auth-showcase" aria-label="Image Find workspace">
+        <div class="login-brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg></span><span>image<span>find</span></span></div>
+        <div class="auth-showcase-content">
+          <span class="auth-kicker">PRIMEX WORKSPACE</span>
+          <h2>Product work,<br>all in one place.</h2>
+          <p>Find product images and complete country data from your own workspace.</p>
+          <div class="auth-features" aria-hidden="true"><span>Image Find</span><span>Countries from Excel</span></div>
+        </div>
+        <div class="auth-showcase-footer">A focused workspace for product research.</div>
+      </section>
+      <section class="login-card" aria-labelledby="loginHeading">
+        <div class="login-form-wrap">
+          <div class="eyebrow">WELCOME BACK</div>
+          <h1 id="loginHeading">Login</h1>
+          <p class="login-subtitle">Enter your credentials to continue.</p>
+          <form id="loginForm">
+            <div class="field"><label for="email">Email address</label><input id="email" name="email" type="email" required autocomplete="username" placeholder="name@company.com" autofocus></div>
+            <div class="field"><label for="password">Password</label><div class="password-field"><input id="password" name="password" type="password" required autocomplete="current-password" placeholder="Enter your password"><button id="passwordToggle" type="button" aria-label="Show password" aria-pressed="false">Show</button></div></div>
+            <button id="loginButton" class="button primary" type="submit">Login <span aria-hidden="true">→</span></button>
+            <p id="loginMessage" class="message" role="status" aria-live="polite"></p>
+          </form>
+        </div>
+        <p class="login-footer">Private workspace · Primex</p>
+      </section>
+    </div>
+  </main>
+  <script>
+    const form = document.querySelector('#loginForm');
+    const button = document.querySelector('#loginButton');
+    const message = document.querySelector('#loginMessage');
+    const password = document.querySelector('#password');
+    const passwordToggle = document.querySelector('#passwordToggle');
+    passwordToggle.addEventListener('click', () => {
+      const visible = password.type === 'password';
+      password.type = visible ? 'text' : 'password';
+      passwordToggle.textContent = visible ? 'Hide' : 'Show';
+      passwordToggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+      passwordToggle.setAttribute('aria-pressed', String(visible));
+    });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      button.disabled = true;
+      button.textContent = 'Logging in…';
+      message.textContent = '';
+      message.classList.remove('error');
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email: document.querySelector('#email').value, password: document.querySelector('#password').value})
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || 'Login failed.');
+        location.replace('/');
+      } catch (error) {
+        message.textContent = error.message || 'Could not connect to the server.';
+        message.classList.add('error');
+        button.disabled = false;
+        button.innerHTML = 'Login <span aria-hidden="true">→</span>';
+      }
+    });
+  </script>
+</body>
+</html>

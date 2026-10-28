@@ -3,18 +3,25 @@
 from __future__ import annotations
 
 import json
+import base64
+import binascii
+import hashlib
+import hmac
 import re
+import secrets
 import shutil
 import sys
 import tempfile
 import threading
+import time
 import webbrowser
 from io import BytesIO
 from http.cookiejar import CookieJar
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from html import unescape
 from html.parser import HTMLParser
 from http import HTTPStatus
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -25,7 +32,15 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 ROOT = Path(__file__).resolve().parent
-PAGE = ROOT / "web" / "dantesse.html"
+PAGE = ROOT / "web" / "image_find.html"
+LOGIN_PAGE = ROOT / "web" / "login.html"
+STYLESHEET = ROOT / "web" / "app.css"
+LOGIN_EMAIL = "info@primexeu.com"
+LOGIN_SALT = b"image-find-primex-v1"
+LOGIN_HASH = bytes.fromhex("ceee939e7cd90fe8814faa15900bce8b0d144bd6d1a946c934a80402eed41756")
+SESSION_SECONDS = 12 * 60 * 60
+SESSIONS: dict[str, float] = {}
+SESSIONS_LOCK = threading.Lock()
 CODE_PATTERN = re.compile(r"(?=.{1,40}\Z)[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\Z")
 MAX_CODES = 2000
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
@@ -35,35 +50,35 @@ _network = threading.local()
 def parse_codes(raw: str) -> list[str]:
     """One nonempty line is one product; keep codes as strings and leading zeros."""
     if not isinstance(raw, str):
-        raise ValueError("Lista e kodeve duhet të jetë tekst.")
+        raise ValueError("The code list must be text.")
     codes = [line.strip() for line in raw.splitlines() if line.strip()]
     if not codes:
-        raise ValueError("Shkruaj të paktën një kod, një kod për rresht.")
+        raise ValueError("Enter at least one code, one per line.")
     if len(codes) > MAX_CODES:
-        raise ValueError(f"Mund të kontrollohen deri në {MAX_CODES} kode për një kërkim.")
+        raise ValueError(f"You can check up to {MAX_CODES} codes per search.")
     invalid = [code for code in codes if not CODE_PATTERN.fullmatch(code)]
     if invalid:
-        raise ValueError(f"Kodi '{invalid[0]}' ka shenja të palejuara.")
+        raise ValueError(f"Code '{invalid[0]}' contains invalid characters.")
     return codes
 
 
 def normalize_base_url(raw: str) -> str:
     """Accept any HTTP(S) site, sample product URL, or URL with {code}."""
     if not isinstance(raw, str):
-        raise ValueError("Shkruaj linkun e faqes.")
+        raise ValueError("Enter a website URL.")
     value = raw.strip()
     parsed = urlparse(value.replace("{code}", "CODE_PLACEHOLDER"))
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("Përdor një link të plotë që fillon me http:// ose https://.")
+        raise ValueError("Use a full URL starting with http:// or https://.")
     if parsed.username or parsed.password or parsed.fragment:
-        raise ValueError("Linku nuk duhet të ketë hyrje ose fragment (#...).")
+        raise ValueError("The URL must not contain credentials or a fragment (#...).")
     path = parsed.path
     query = parsed.query
     if "CODE_PLACEHOLDER" in path or "CODE_PLACEHOLDER" in query:
         path = path.replace("CODE_PLACEHOLDER", "{code}")
         query = query.replace("CODE_PLACEHOLDER", "{code}")
         if (path + query).count("{code}") != 1:
-            raise ValueError("Vendose {code} vetëm një herë në link.")
+            raise ValueError("Use {code} only once in the URL.")
     elif parsed.hostname in {"dantesse.com", "www.dantesse.com"} and re.search(r"/[A-Za-z0-9_-]+\.html$", path):
         path = re.sub(r"/[A-Za-z0-9_-]+\.html$", "/{code}.html", path)
     elif parsed.hostname in {"dantesse.com", "www.dantesse.com"}:
@@ -86,7 +101,7 @@ def normalize_base_url(raw: str) -> str:
 
 def product_url(pattern: str, code: str) -> str:
     if "{code}" not in pattern:
-        raise ValueError("Ky link nuk ka model kodi. Përdor kërkimin e faqes.")
+        raise ValueError("This URL has no code template. Use the website search.")
     return pattern.replace("{code}", quote(code, safe=""))
 
 
@@ -99,12 +114,23 @@ def convert_to_png(data: bytes) -> bytes:
     """Decode the actual image and preserve transparency and EXIF orientation."""
     with Image.open(BytesIO(data)) as source:
         if source.format not in {"JPEG", "PNG", "WEBP", "GIF", "BMP", "TIFF", "AVIF"}:
-            raise ValueError("Formati i fotos nuk mbështetet.")
+            raise ValueError("This image format is not supported.")
         image = ImageOps.exif_transpose(source)
         has_alpha = "A" in image.getbands() or "transparency" in image.info
         image = image.convert("RGBA" if has_alpha else "RGB")
         output = BytesIO()
         image.save(output, format="PNG")
+        return output.getvalue()
+
+
+def convert_to_jpg(data: bytes) -> bytes:
+    """Export a preview as JPEG, replacing transparent pixels with white."""
+    with Image.open(BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGBA")
+        background = Image.new("RGB", image.size, "white")
+        background.paste(image, mask=image.getchannel("A"))
+        output = BytesIO()
+        background.save(output, format="JPEG", quality=92, subsampling=0)
         return output.getvalue()
 
 
@@ -119,7 +145,7 @@ def fetch(url: str, *, limit: int = MAX_IMAGE_BYTES, referer: str | None = None)
         content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
         body = response.read(limit + 1)
     if len(body) > limit:
-        raise ValueError("Skedari është tepër i madh.")
+        raise ValueError("The file is too large.")
     return body, content_type
 
 
@@ -249,7 +275,8 @@ def image_candidates(signals: PageSignals, page_url: str, code: str) -> list[str
     for candidate in candidates:
         if not candidate or candidate.startswith("data:"):
             continue
-        url = urljoin(page_url, unescape(candidate))
+        # Catalogs may publish image paths with literal spaces or Unicode.
+        url = urljoin(page_url, quote(unescape(candidate), safe=":/?&=%#@!$'()*+,;[]-._~"))
         if urlparse(url).scheme in {"http", "https"} and url not in result:
             result.append(url)
     return result[:12]
@@ -407,17 +434,17 @@ def inspect_product(code: str, pattern: str, cache_dir: Path, index: int) -> dic
         else:
             url = search_for_product_url(pattern, code)
             if not url:
-                result["message"] = "Kërkimi i kësaj faqeje nuk u verifikua. Jep një link me {code}."
+                result["message"] = "Could not verify this website search. Provide a URL with {code}."
                 return result
         result["url"] = url
         body, content_type = fetch(url, limit=2 * 1024 * 1024)
         if content_type != "text/html":
-            raise ValueError("Faqja nuk ktheu HTML.")
+            raise ValueError("The page did not return HTML.")
         html = body.decode("utf-8", errors="replace")
         host = urlparse(url).hostname
         is_dantesse = host in {"dantesse.com", "www.dantesse.com"}
         if is_dantesse and not has_product_reference(html, code):
-            result.update(state="missing", message="Produkti nuk gjendet në katalog.")
+            result.update(state="missing", message="The product was not found in the catalog.")
             return result
         signals = page_signals(html)
         products = structured_products(signals)
@@ -427,7 +454,7 @@ def inspect_product(code: str, pattern: str, cache_dir: Path, index: int) -> dic
         code_confirmed = code_confirmed or any(str(product.get("sku", "")).lower() == code.lower()
                                                for product in products)
         if not is_dantesse and not code_confirmed:
-            result["message"] = "Kodi nuk u konfirmua në këtë faqe. Jep link produkti me {code}."
+            result["message"] = "The code was not confirmed on this page. Provide a product URL with {code}."
             return result
         candidates = ([find_photo_url(html, code)] if is_dantesse else image_candidates(signals, url, code))
         for photo_url in candidates:
@@ -442,20 +469,20 @@ def inspect_product(code: str, pattern: str, cache_dir: Path, index: int) -> dic
                 continue
             cache_path = cache_dir / f"{index}.png"
             cache_path.write_bytes(png)
-            message = "Fotoja u gjet. Kontrolloje para ruajtjes."
+            message = "Image found. Review it before saving."
             if not is_dantesse and not code_confirmed:
-                message = "Fotoja u gjet, por kodi nuk shfaqet në faqe. Verifikoje me kujdes."
+                message = "Image found, but the code is not shown on the page. Review carefully."
             result.update(state="review", message=message, preview=f"/api/preview/{index}",
                           extension=".png", cache_path=str(cache_path), photo_url=photo_url)
             return result
-        result.update(state="missing", message="Faqja u gjet, por nuk ka foto të përdorshme.")
+        result.update(state="missing", message="Page found, but no usable image is available.")
     except HTTPError as exc:
         if exc.code == HTTPStatus.NOT_FOUND:
-            result.update(state="missing", message="Faqja e produktit nuk u gjet.")
+            result.update(state="missing", message="The product page was not found.")
         else:
-            result["message"] = f"Faqja ktheu gabimin HTTP {exc.code}. Provo përsëri."
+            result["message"] = f"The page returned HTTP {exc.code}. Please try again."
     except (URLError, TimeoutError, OSError, ValueError) as exc:
-        result["message"] = f"Nuk u verifikua: {exc}"
+        result["message"] = f"Could not verify: {exc}"
     return result
 
 
@@ -468,6 +495,10 @@ class PhotoJob:
         self.done = 0
         self.destination: Path | None = None
         self.cache: tempfile.TemporaryDirectory | None = None
+        self.generation = 0
+        self.cancel_event = threading.Event()
+        self.pool: ThreadPoolExecutor | None = None
+        self.retired_caches: list[tempfile.TemporaryDirectory] = []
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -481,44 +512,91 @@ class PhotoJob:
         codes = parse_codes(raw_codes)
         pattern = normalize_base_url(base_url)
         if not isinstance(destination, str) or not destination.strip():
-            raise ValueError("Shkruaj folderin ku do të ruhen fotot.")
+            raise ValueError("Enter the folder where images will be saved.")
         target = Path(destination.strip()).expanduser()
         if not target.is_absolute():
-            raise ValueError("Përdor një path absolut për folderin e fotove.")
+            raise ValueError("Use an absolute path for the image folder.")
         if target.exists() and not target.is_dir():
-            raise ValueError("Path-i i fotove duhet të jetë folder.")
+            raise ValueError("The image path must be a folder.")
         with self.lock:
             if self.running or self.saving:
-                raise ValueError("Prit derisa të përfundojë puna në proces.")
+                raise ValueError("Wait for the current task to finish.")
             if self.cache:
                 self.cache.cleanup()
             self.cache = tempfile.TemporaryDirectory(prefix="image_find_photos_")
             self.destination = target
-            self.items = [{"index": index, "code": code, "state": "waiting", "message": "Në pritje", "preview": None}
+            self.items = [{"index": index, "code": code, "state": "waiting", "message": "Pending", "preview": None}
                           for index, code in enumerate(codes)]
             self.done = 0
             self.running = True
+            self.generation += 1
+            generation = self.generation
+            self.cancel_event = threading.Event()
+            cancel_event = self.cancel_event
+            cache = self.cache
             cache_dir = Path(self.cache.name)
-        threading.Thread(target=self._run, args=(codes, pattern, cache_dir), daemon=True).start()
+        threading.Thread(target=self._run, args=(codes, pattern, cache_dir, cache, generation, cancel_event), daemon=True).start()
 
-    def _run(self, codes: list[str], pattern: str, cache_dir: Path) -> None:
+    def _run(self, codes: list[str], pattern: str, cache_dir: Path,
+             cache: tempfile.TemporaryDirectory, generation: int,
+             cancel_event: threading.Event) -> None:
         try:
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                futures = {pool.submit(inspect_product, code, pattern, cache_dir, index): index
-                           for index, code in enumerate(codes)}
-                for future in as_completed(futures):
-                    index = futures[future]
-                    try:
-                        result = future.result()
-                    except Exception as exc:  # Keep a single bad page from stopping the batch.
-                        result = {"index": index, "code": codes[index], "state": "error",
-                                  "message": f"Gabim gjatë kontrollit: {exc}", "preview": None}
-                    with self.lock:
-                        self.items[index] = result
-                        self.done += 1
+            with ThreadPoolExecutor(max_workers=min(8, len(codes))) as pool:
+                with self.lock:
+                    if self.generation == generation:
+                        self.pool = pool
+                pending = {}
+                next_index = 0
+                while pending or next_index < len(codes):
+                    if cancel_event.is_set():
+                        for future in pending:
+                            future.cancel()
+                        break
+                    while next_index < len(codes) and len(pending) < 8:
+                        future = pool.submit(inspect_product, codes[next_index], pattern, cache_dir, next_index)
+                        pending[future] = next_index
+                        next_index += 1
+                    completed, _ = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        index = pending.pop(future)
+                        try:
+                            result = future.result()
+                        except Exception as exc:
+                            result = {"index": index, "code": codes[index], "state": "error",
+                                      "message": f"Error while checking: {exc}", "preview": None}
+                        with self.lock:
+                            if self.generation == generation:
+                                self.items[index] = result
+                                self.done += 1
         finally:
             with self.lock:
-                self.running = False
+                if self.generation == generation:
+                    self.running = False
+                    self.pool = None
+                else:
+                    cache.cleanup()
+                    if cache in self.retired_caches:
+                        self.retired_caches.remove(cache)
+
+    def reset(self) -> None:
+        with self.lock:
+            if self.saving:
+                raise ValueError("Wait for image saving to finish.")
+            self.generation += 1
+            self.cancel_event.set()
+            cache = self.cache
+            was_running = self.running
+            if cache:
+                if was_running:
+                    self.retired_caches.append(cache)
+                else:
+                    cache.cleanup()
+            self.cache = None
+            self.pool = None
+            self.destination = None
+            self.items = []
+            self.done = 0
+            self.running = False
 
     def preview(self, index: int) -> tuple[bytes, str] | None:
         with self.lock:
@@ -532,34 +610,40 @@ class PhotoJob:
             return None
         return path.read_bytes(), "image/png"
 
-    def save(self, indexes: list[int]) -> dict:
+    def save(self, indexes: list[int], image_format: str = "PNG") -> dict:
         if not isinstance(indexes, list) or not all(type(index) is int for index in indexes):
-            raise ValueError("Zgjedhja e fotove nuk është e vlefshme.")
+            raise ValueError("The image selection is invalid.")
+        if image_format not in {"PNG", "JPG"}:
+            raise ValueError("Choose PNG or JPG as the format.")
         with self.lock:
             if self.running or self.saving:
-                raise ValueError("Prit derisa të përfundojë puna në proces.")
+                raise ValueError("Wait for the current task to finish.")
             if self.destination is None:
-                raise ValueError("Nis një kërkim më parë.")
+                raise ValueError("Start a search first.")
             chosen = [self.items[index] for index in dict.fromkeys(indexes)
                       if 0 <= index < len(self.items) and self.items[index]["state"] == "review"]
             target_dir = self.destination
             if not chosen:
-                raise ValueError("Nuk ka foto të gjetura për ruajtje.")
+                raise ValueError("There are no found images to save.")
             self.saving = True
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
             if not target_dir.is_dir():
-                raise ValueError("Folderi i fotove nuk mund të krijohet.")
+                raise ValueError("Could not create the image folder.")
             saved = existing = 0
             for item in chosen:
                 source = Path(item["cache_path"])
-                target = target_dir / photo_filename(item["code"], ".png")
+                extension = ".jpg" if image_format == "JPG" else ".png"
+                target = target_dir / photo_filename(item["code"], extension)
                 if target.exists():
-                    state, message = "exists", "Skedari ekziston; nuk u mbishkrua."
+                    state, message = "exists", "The file already exists and was not overwritten."
                     existing += 1
                 else:
-                    shutil.copyfile(source, target)
-                    state, message = "saved", f"U ruajt: {target}"
+                    if image_format == "JPG":
+                        target.write_bytes(convert_to_jpg(source.read_bytes()))
+                    else:
+                        shutil.copyfile(source, target)
+                    state, message = "saved", f"Saved: {target}"
                     saved += 1
                 with self.lock:
                     item["state"] = state
@@ -569,39 +653,235 @@ class PhotoJob:
             with self.lock:
                 self.saving = False
 
-    def save_all(self) -> dict:
+    def save_all(self, image_format: str = "PNG") -> dict:
         with self.lock:
             indexes = [item["index"] for item in self.items if item["state"] == "review"]
-        return self.save(indexes)
+        return self.save(indexes, image_format)
 
     def review(self, index: int, action: str) -> None:
         if type(index) is not int or action not in {"skip", "reopen"}:
-            raise ValueError("Veprimi nuk është i vlefshëm.")
+            raise ValueError("This action is invalid.")
         with self.lock:
             if self.running or self.saving or not 0 <= index < len(self.items):
-                raise ValueError("Prit derisa të përfundojë puna në proces.")
+                raise ValueError("Wait for the current task to finish.")
             item = self.items[index]
             if action == "skip" and item["state"] == "review":
                 item["state"] = "skipped"
-                item["message"] = "U la jashtë; fotoja nuk u ruajt."
+                item["message"] = "Excluded; the image was not saved."
             elif action == "reopen" and item["state"] == "skipped":
                 item["state"] = "review"
-                item["message"] = "Kontrolloje para ruajtjes."
+                item["message"] = "Review before saving."
             else:
-                raise ValueError("Kjo foto nuk mund të ndryshohet tani.")
+                raise ValueError("This image cannot be changed right now.")
 
 
 JOB = PhotoJob()
+
+
+class CountryJob:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.running = False
+        self.done = 0
+        self.results: list[dict] = []
+        self.output: bytes | None = None
+        self.error = ""
+        self.generation = 0
+        self.cancel_event = threading.Event()
+
+    def start(self, encoded_file: str, site_url: str, column: str = "", output_column: str = "",
+              language: str = "EN") -> None:
+        from country_find import read_code_rows
+        if not isinstance(encoded_file, str) or not isinstance(column, str) or not isinstance(output_column, str):
+            raise ValueError("Upload a valid Excel file.")
+        if language not in {"DE", "EN"}:
+            raise ValueError("Choose DE or EN as the language.")
+        try:
+            data = base64.b64decode(encoded_file, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("Could not read the Excel file.") from exc
+        code_rows = read_code_rows(data, column)
+        codes = [code for _, code in code_rows]
+        row_numbers = [row for row, _ in code_rows]
+        pattern = normalize_base_url(site_url)
+        with self.lock:
+            if self.running:
+                raise ValueError("Wait for the country search to finish.")
+            self.results = [{"code": code, "country": "", "status": "Pending", "url": ""} for code in codes]
+            self.done = 0
+            self.output = None
+            self.error = ""
+            self.running = True
+            self.generation += 1
+            generation = self.generation
+            self.cancel_event = threading.Event()
+            cancel_event = self.cancel_event
+        threading.Thread(target=self._run, args=(codes, pattern, data, row_numbers, output_column, language, generation, cancel_event), daemon=True).start()
+
+    def _run(self, codes: list[str], pattern: str, data: bytes, row_numbers: list[int],
+             output_column: str, language: str, generation: int, cancel_event: threading.Event) -> None:
+        from country_find import make_workbook, run_country_search
+        try:
+            def progress(index: int, result: dict) -> None:
+                with self.lock:
+                    if self.generation == generation:
+                        self.results[index] = result
+                        self.done += 1
+            results = run_country_search(codes, pattern, progress, cancel_event, language)
+            if cancel_event.is_set():
+                return
+            output = make_workbook(results, data, row_numbers, output_column)
+            with self.lock:
+                if self.generation == generation:
+                    self.output = output
+        except Exception as exc:
+            with self.lock:
+                if self.generation == generation:
+                    self.error = str(exc)
+        finally:
+            with self.lock:
+                if self.generation == generation:
+                    self.running = False
+
+    def reset(self) -> None:
+        with self.lock:
+            self.generation += 1
+            self.cancel_event.set()
+            self.running = False
+            self.done = 0
+            self.results = []
+            self.output = None
+            self.error = ""
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            return {"running": self.running, "done": self.done, "total": len(self.results),
+                    "ready": self.output is not None, "error": self.error, "results": list(self.results)}
+
+    def download(self) -> bytes | None:
+        with self.lock:
+            return self.output
+
+
+COUNTRY_JOB = CountryJob()
+
+
+class IngredientJob:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.running = False
+        self.done = 0
+        self.results: list[dict] = []
+        self.output: bytes | None = None
+        self.error = ""
+        self.generation = 0
+        self.cancel_event = threading.Event()
+
+    def start(self, raw_codes: str, site_url: str) -> None:
+        codes = parse_codes(raw_codes)
+        pattern = normalize_base_url(site_url)
+        with self.lock:
+            if self.running:
+                raise ValueError("Wait for the ingredient search to finish.")
+            self.results = [{"code": code, "ingredients": "", "status": "Pending", "url": ""} for code in codes]
+            self.done = 0
+            self.output = None
+            self.error = ""
+            self.running = True
+            self.generation += 1
+            generation = self.generation
+            self.cancel_event = threading.Event()
+            cancel_event = self.cancel_event
+        threading.Thread(target=self._run, args=(codes, pattern, generation, cancel_event), daemon=True).start()
+
+    def _run(self, codes: list[str], pattern: str, generation: int, cancel_event: threading.Event) -> None:
+        from ingredients_find import make_ingredient_workbook, run_ingredient_search
+
+        try:
+            def progress(index: int, result: dict) -> None:
+                with self.lock:
+                    if self.generation == generation:
+                        self.results[index] = result
+                        self.done += 1
+
+            results = run_ingredient_search(codes, pattern, progress, cancel_event)
+            if cancel_event.is_set():
+                return
+            output = make_ingredient_workbook(results)
+            with self.lock:
+                if self.generation == generation:
+                    self.output = output
+        except Exception as exc:
+            with self.lock:
+                if self.generation == generation:
+                    self.error = str(exc)
+        finally:
+            with self.lock:
+                if self.generation == generation:
+                    self.running = False
+
+    def reset(self) -> None:
+        with self.lock:
+            self.generation += 1
+            self.cancel_event.set()
+            self.running = False
+            self.done = 0
+            self.results = []
+            self.output = None
+            self.error = ""
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            return {"running": self.running, "done": self.done, "total": len(self.results),
+                    "ready": self.output is not None, "error": self.error, "results": list(self.results)}
+
+    def download(self) -> bytes | None:
+        with self.lock:
+            return self.output
+
+
+INGREDIENT_JOB = IngredientJob()
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, _format: str, *_args) -> None:
         return
 
-    def send_json(self, data: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
+    def send_json(self, data: dict, status: HTTPStatus = HTTPStatus.OK, cookie: str | None = None) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def session_token(self) -> str | None:
+        try:
+            cookie = SimpleCookie()
+            cookie.load(self.headers.get("Cookie", ""))
+            item = cookie.get("image_find_session")
+            return item.value if item else None
+        except CookieError:
+            return None
+
+    def authenticated(self) -> bool:
+        token = self.session_token()
+        if not token:
+            return False
+        with SESSIONS_LOCK:
+            expires = SESSIONS.get(token, 0)
+            if expires <= time.monotonic():
+                SESSIONS.pop(token, None)
+                return False
+            return True
+
+    def send_page(self, path: Path) -> None:
+        body = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -610,11 +890,11 @@ class Handler(BaseHTTPRequestHandler):
     def request_json(self) -> dict:
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            if size < 1 or size > 512_000:
-                raise ValueError("Kërkesa është e zbrazët ose tepër e madhe.")
+            if size < 1 or size > 14_000_000:
+                raise ValueError("The request is empty or too large.")
             data = json.loads(self.rfile.read(size).decode("utf-8"))
             if not isinstance(data, dict):
-                raise ValueError("Të dhënat nuk janë të vlefshme.")
+                raise ValueError("The submitted data is invalid.")
             return data
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError(str(exc)) from exc
@@ -622,14 +902,52 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
-            body = PAGE.read_bytes()
+            self.send_page(PAGE if self.authenticated() else LOGIN_PAGE)
+        elif path == "/login":
+            self.send_page(LOGIN_PAGE)
+        elif path == "/app.css":
+            body = STYLESHEET.read_bytes()
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", "text/css; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+        elif not self.authenticated():
+            if path.startswith("/api/"):
+                self.send_json({"ok": False, "message": "Please log in."}, HTTPStatus.UNAUTHORIZED)
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND)
         elif path == "/api/status":
             self.send_json(JOB.snapshot())
+        elif path == "/api/country/status":
+            self.send_json(COUNTRY_JOB.snapshot())
+        elif path == "/api/ingredients/status":
+            self.send_json(INGREDIENT_JOB.snapshot())
+        elif path == "/api/country/download":
+            body = COUNTRY_JOB.download()
+            if body is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", 'attachment; filename="product_countries.xlsx"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/api/ingredients/download":
+            body = INGREDIENT_JOB.download()
+            if body is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", 'attachment; filename="product_ingredients.xlsx"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
         elif path.startswith("/api/preview/"):
             try:
                 index = int(path.rsplit("/", 1)[1])
@@ -652,16 +970,58 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
-            data = self.request_json()
             path = urlparse(self.path).path
+            if path == "/api/login":
+                data = self.request_json()
+                email = data.get("email")
+                password = data.get("password")
+                valid_email = isinstance(email, str) and email.strip().casefold() == LOGIN_EMAIL
+                valid_password = isinstance(password, str) and len(password) < 256 and hmac.compare_digest(
+                    hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), LOGIN_SALT, 200_000), LOGIN_HASH
+                )
+                if not (valid_email and valid_password):
+                    self.send_json({"ok": False, "message": "Invalid email or password."}, HTTPStatus.UNAUTHORIZED)
+                    return
+                token = secrets.token_urlsafe(32)
+                with SESSIONS_LOCK:
+                    now = time.monotonic()
+                    for old_token, expires in list(SESSIONS.items()):
+                        if expires <= now:
+                            del SESSIONS[old_token]
+                    SESSIONS[token] = now + SESSION_SECONDS
+                self.send_json({"ok": True}, cookie=f"image_find_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_SECONDS}")
+                return
+            if not self.authenticated():
+                self.send_json({"ok": False, "message": "Please log in."}, HTTPStatus.UNAUTHORIZED)
+                return
+            if path == "/api/logout":
+                token = self.session_token()
+                with SESSIONS_LOCK:
+                    if token:
+                        SESSIONS.pop(token, None)
+                self.send_json({"ok": True}, cookie="image_find_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+                return
+            data = self.request_json()
             if path == "/api/start":
                 JOB.start(data.get("destination"), data.get("base_url"), data.get("codes"))
-                self.send_json({"ok": True, "message": "Kontrolli nisi."})
+                self.send_json({"ok": True, "message": "Search started."})
+            elif path == "/api/country/start":
+                COUNTRY_JOB.start(data.get("file"), data.get("base_url"), data.get("column", ""),
+                                  data.get("output_column", ""), data.get("language", "EN"))
+                self.send_json({"ok": True, "message": "Country search started."})
+            elif path == "/api/ingredients/start":
+                INGREDIENT_JOB.start(data.get("codes"), data.get("base_url"))
+                self.send_json({"ok": True, "message": "Ingredient search started."})
+            elif path == "/api/reset":
+                JOB.reset()
+                COUNTRY_JOB.reset()
+                INGREDIENT_JOB.reset()
+                self.send_json({"ok": True})
             elif path == "/api/save":
-                result = JOB.save(data.get("indexes"))
+                result = JOB.save(data.get("indexes"), data.get("format", "PNG"))
                 self.send_json({"ok": True, **result})
             elif path == "/api/save-all":
-                result = JOB.save_all()
+                result = JOB.save_all(data.get("format", "PNG"))
                 self.send_json({"ok": True, **result})
             elif path == "/api/review":
                 JOB.review(data.get("index"), data.get("action"))

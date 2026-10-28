@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-python dantesse_web.py --open
+python image_find.py --open
 pause
