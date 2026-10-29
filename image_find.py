@@ -843,6 +843,77 @@ class IngredientJob:
 INGREDIENT_JOB = IngredientJob()
 
 
+class GrossJob(IngredientJob):
+    def __init__(self) -> None:
+        super().__init__()
+        self.prefixes = ["01", "03", "06", "12"]
+
+    def start(self, raw_codes: str, site_url: str, encoded_file: str | None = None,
+              column: str = "", prefixes: list[str] | None = None) -> None:
+        from gross_find import parse_prefixes
+        prefixes = parse_prefixes(prefixes)
+        if encoded_file:
+            from country_find import read_code_rows
+            if not isinstance(encoded_file, str) or not isinstance(column, str):
+                raise ValueError("Upload a valid Excel file.")
+            try:
+                data = base64.b64decode(encoded_file, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError("Could not read the Excel file.") from exc
+            codes = parse_codes("\n".join(code for _, code in read_code_rows(data, column)))
+        else:
+            codes = parse_codes(raw_codes)
+        pattern = normalize_base_url(site_url)
+        with self.lock:
+            if self.running:
+                raise ValueError("Wait for the gross weight search to finish.")
+            self.results = [{"code": code, "gross": "", "status": "Pending", "url": ""} for code in codes]
+            self.prefixes = prefixes
+            self.done = 0
+            self.output = None
+            self.error = ""
+            self.running = True
+            self.generation += 1
+            generation = self.generation
+            self.cancel_event = threading.Event()
+            cancel_event = self.cancel_event
+        threading.Thread(target=self._run, args=(codes, pattern, prefixes, generation, cancel_event), daemon=True).start()
+
+    def _run(self, codes: list[str], pattern: str, prefixes: list[str], generation: int,
+             cancel_event: threading.Event) -> None:
+        from gross_find import add_calculations, make_gross_workbook, run_gross_search
+        try:
+            def progress(index: int, result: dict) -> None:
+                with self.lock:
+                    if self.generation == generation:
+                        self.results[index] = add_calculations(result, prefixes)
+                        self.done += 1
+            results = run_gross_search(codes, pattern, progress, cancel_event)
+            if cancel_event.is_set():
+                return
+            output = make_gross_workbook(results, prefixes)
+            with self.lock:
+                if self.generation == generation:
+                    self.output = output
+        except Exception as exc:
+            with self.lock:
+                if self.generation == generation:
+                    self.error = str(exc)
+        finally:
+            with self.lock:
+                if self.generation == generation:
+                    self.running = False
+
+    def snapshot(self) -> dict:
+        state = super().snapshot()
+        with self.lock:
+            state["prefixes"] = list(self.prefixes)
+        return state
+
+
+GROSS_JOB = GrossJob()
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, _format: str, *_args) -> None:
         return
@@ -924,6 +995,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(COUNTRY_JOB.snapshot())
         elif path == "/api/ingredients/status":
             self.send_json(INGREDIENT_JOB.snapshot())
+        elif path == "/api/gross/status":
+            self.send_json(GROSS_JOB.snapshot())
         elif path == "/api/country/download":
             body = COUNTRY_JOB.download()
             if body is None:
@@ -944,6 +1017,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             self.send_header("Content-Disposition", 'attachment; filename="product_ingredients.xlsx"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/api/gross/download":
+            body = GROSS_JOB.download()
+            if body is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", 'attachment; filename="product_gross_weights.xlsx"')
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -1012,10 +1097,15 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/ingredients/start":
                 INGREDIENT_JOB.start(data.get("codes"), data.get("base_url"))
                 self.send_json({"ok": True, "message": "Ingredient search started."})
+            elif path == "/api/gross/start":
+                GROSS_JOB.start(data.get("codes"), data.get("base_url"), data.get("file"),
+                                data.get("column", ""), data.get("prefixes"))
+                self.send_json({"ok": True, "message": "Gross weight search started."})
             elif path == "/api/reset":
                 JOB.reset()
                 COUNTRY_JOB.reset()
                 INGREDIENT_JOB.reset()
+                GROSS_JOB.reset()
                 self.send_json({"ok": True})
             elif path == "/api/save":
                 result = JOB.save(data.get("indexes"), data.get("format", "PNG"))

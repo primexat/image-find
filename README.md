@@ -22,6 +22,10 @@ Kur kërkimi përfundon, kliko **Shkarko Excel-in**. Skedari i shkarkuar ruan fl
 
 Në sidebar hap **Ingredients**, shkruaj linkun e webfaqes dhe kodet e produkteve (një për rresht), pastaj kliko **Find ingredients**. Programi verifikon kodin në faqen e produktit dhe merr tekstin poshtë titullit `Zutaten` ose `Ingredients`. Të gjitha rezultatet shfaqen në faqe, pa kufirin e mëparshëm prej 80 rreshtash. Kur kërkimi përfundon, kliko **Download Excel file** për të marrë kodin, përbërësit, statusin dhe linkun e produktit. Teksti i përbërësve ruhet në gjuhën që përdor faqja. Rifreskimi anulon kërkimin aktiv; një kërkim i përfunduar i Ingredients ruhet gjatë rifreskimit kur nuk ka rezultate në kategoritë e tjera.
 
+## Pesha bruto (Gross weight)
+
+Në sidebar hap **Gross weight**, shkruaj linkun e webfaqes dhe kodet e produkteve (një për rresht), ose ngarko direkt një skedar `.xlsx` me kodet nëse Excel nuk lejon kopjimin e një liste të madhe. Mund të zgjedhësh kolonën e kodeve; pa zgjedhje kërkohet titulli `Code`, `Kodi` ose `SKU`, pastaj përdoret kolona A. Katër fushat e prefikseve janë opsionale: plotëso vetëm ato që dëshiron, p.sh. `01`, `03`, `06`, `12`, dhe kliko **Find gross weight**. Programi verifikon kodin e produktit dhe kërkon peshën e shënuar si `Gross weight`, `Bruttogewicht`, `Gross` ose `Brutto`; kur këto mungojnë, lexon peshën nga titulli i produktit (p.sh. `150g`). Në Excel, kolonat janë `Code`, `Gross weight`, shprehja e shumëzimit dhe `TOTALI`. Për kodin `105430` me peshë `150g`, rreshti i parë është `105430 | 150g`; pastaj vijnë `01-105430 | 150g | (1 x 150g) | 150g`, `03-105430 | 150g | (3 x 150g) | 450g` e kështu me radhë vetëm për prefikset e plotësuara.
+
 ## Përdorimi
 
 1. Shkruaj path-in absolut të folderit ku do të ruhen fotot, p.sh. `Y:\05_CLIENTS\02_VS\10_DESIGN\02_FEINKOST\18_DANTESSE_PROJECT\300+`.

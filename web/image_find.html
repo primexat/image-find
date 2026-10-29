@@ -15,6 +15,7 @@
       <a href="#image-find" data-view="image-find" aria-current="page"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg></span>Image Find</a>
       <a href="#countries" data-view="countries"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M10 9v12M10 15h10"/></svg></span>Countries from Excel</a>
       <a href="#ingredients" data-view="ingredients"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 10h14M5 15h9M5 20h9"/><circle cx="19" cy="19" r="2"/></svg></span>Ingredients</a>
+      <a href="#gross" data-view="gross"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19h16M7 19l2-11h6l2 11M8 8a4 4 0 0 1 8 0M10 13h4"/></svg></span>Gross weight</a>
     </nav>
     <div class="sidebar-footer"><strong>Image Find</strong>Product research tools on your computer.</div>
   </aside>
@@ -67,6 +68,21 @@
         <section class="panel results" aria-labelledby="ingredientsResultsHeading"><div class="results-head"><h2 id="ingredientsResultsHeading">Results</h2><p id="ingredientsProgressText" class="helper">Start a search to see ingredients.</p><progress id="ingredientsProgress" class="progress" max="1" value="0" hidden></progress><div id="ingredientsSummary" class="summary" aria-live="polite"></div><a id="ingredientsDownload" class="button save" href="/api/ingredients/download" download="product_ingredients.xlsx" hidden>Download Excel file</a></div><div id="ingredientsResults" class="list"><p class="empty">Product codes and ingredient text will appear here.</p></div></section>
       </div>
     </section>
+    <section id="grossView" hidden aria-labelledby="grossHeading">
+      <div class="intro"><div class="eyebrow">PRODUCT DETAILS</div><h1 id="grossHeading" tabindex="-1">Find gross weight by product code.</h1><p>Enter a website URL and product codes. Gross weight results appear in a table and can be downloaded as an Excel file.</p></div>
+      <div class="workspace">
+        <form class="panel form-panel" id="grossForm">
+          <h2>Search details</h2><p class="helper">One product code per line, up to 2,000. The weight and unit are kept as shown on the website.</p>
+          <div class="field"><label for="grossUrl">Website URL</label><input id="grossUrl" type="url" required placeholder="https://shop.example.com/" autocomplete="url"><p class="helper">Use a homepage, search page, sample product page, or URL containing {code}.</p></div>
+          <div class="field codes"><label for="grossCodes">Product codes</label><textarea id="grossCodes" spellcheck="false" placeholder="105430&#10;105420"></textarea><p class="helper">Paste one code per line, or upload an Excel file below. Leading zeros are preserved in the output.</p></div>
+          <div class="field"><label for="grossFile">Excel file with codes (optional)</label><input id="grossFile" type="file" accept=".xlsx"><p class="helper">Use this if Excel cannot copy a large selection. The active sheet is read.</p></div>
+          <div class="field"><label for="grossColumn">Code column (optional)</label><input id="grossColumn" type="text" placeholder="A or Code"><p class="helper">Leave blank to detect Code, Kodi or SKU; otherwise column A is used.</p></div>
+          <fieldset class="prefix-field"><legend>Prefixes (optional)</legend><div class="prefix-inputs"><label>1<input class="gross-prefix" type="text" inputmode="numeric" pattern="[0-9]{1,4}" maxlength="4" value="01"></label><label>2<input class="gross-prefix" type="text" inputmode="numeric" pattern="[0-9]{1,4}" maxlength="4" value="03"></label><label>3<input class="gross-prefix" type="text" inputmode="numeric" pattern="[0-9]{1,4}" maxlength="4" value="06"></label><label>4<input class="gross-prefix" type="text" inputmode="numeric" pattern="[0-9]{1,4}" maxlength="4" value="12"></label></div><p class="helper">Only filled prefixes are calculated. You can leave any field blank.</p></fieldset>
+          <button class="button primary" id="grossStart" type="submit">Find gross weight</button><div id="grossMessage" class="message" role="status" aria-live="polite"></div>
+        </form>
+        <section class="panel results" aria-labelledby="grossResultsHeading"><div class="results-head"><h2 id="grossResultsHeading">Results</h2><p id="grossProgressText" class="helper">Start a search to see gross weights.</p><progress id="grossProgress" class="progress" max="1" value="0" hidden></progress><div id="grossSummary" class="summary" aria-live="polite"></div><a id="grossDownload" class="button save" href="/api/gross/download" download="product_gross_weights.xlsx" hidden>Download Excel file</a></div><div class="gross-table-wrap"><table class="gross-table"><thead><tr id="grossHeaders"><th>Code</th><th>Gross weight</th><th>01 × Gross</th><th>03 × Gross</th><th>06 × Gross</th><th>12 × Gross</th><th>Status</th><th>Product page</th></tr></thead><tbody id="grossResults"><tr><td colspan="8" class="gross-empty">Product codes and calculated weights will appear here.</td></tr></tbody></table></div></section>
+      </div>
+    </section>
   </main>
   </div>
   </div>
@@ -79,14 +95,14 @@
     });
     function checkSession(response) { if (response.status === 401) { location.replace('/login'); throw new Error('Session expired. Please log in.'); } return response; }
     function changeView(moveFocus=false) {
-      const view=['#countries','#shtetet'].includes(location.hash)?'countries':location.hash==='#ingredients'?'ingredients':'image-find';
-      $('#imageFindView').hidden=view!=='image-find'; $('#countryView').hidden=view!=='countries'; $('#ingredientsView').hidden=view!=='ingredients';
+      const view=['#countries','#shtetet'].includes(location.hash)?'countries':location.hash==='#ingredients'?'ingredients':location.hash==='#gross'?'gross':'image-find';
+      $('#imageFindView').hidden=view!=='image-find'; $('#countryView').hidden=view!=='countries'; $('#ingredientsView').hidden=view!=='ingredients'; $('#grossView').hidden=view!=='gross';
       for (const link of document.querySelectorAll('.sidebar-nav a[data-view]')) {
         if (link.dataset.view===view) link.setAttribute('aria-current','page');
         else link.removeAttribute('aria-current');
       }
-      document.title=view==='countries'?'Countries from Excel · Image Find':view==='ingredients'?'Ingredients · Image Find':'Image Find · Product Images';
-      if (moveFocus) $(view==='countries'?'#countryHeading':view==='ingredients'?'#ingredientsHeading':'#imageFindHeading').focus();
+      document.title=view==='countries'?'Countries from Excel · Image Find':view==='ingredients'?'Ingredients · Image Find':view==='gross'?'Gross weight · Image Find':'Image Find · Product Images';
+      if (moveFocus) $(view==='countries'?'#countryHeading':view==='ingredients'?'#ingredientsHeading':view==='gross'?'#grossHeading':'#imageFindHeading').focus();
     }
     window.addEventListener('hashchange',()=>changeView(true)); changeView();
     const selected = new Set();
@@ -221,17 +237,70 @@
         lastIngredientSignature=''; await pollIngredients(true);
       } catch(error) { $('#ingredientsMessage').textContent=error.message; $('#ingredientsMessage').classList.add('error'); }
     });
+    let lastGrossSignature='';
+    function renderGrossRows(items,prefixes) {
+      const headings=['Code','Gross weight',...prefixes.map(prefix=>`${prefix} × Gross`),'Status','Product page'];
+      $('#grossHeaders').replaceChildren(...headings.map(value=>{ const cell=document.createElement('th'); cell.textContent=value; return cell; }));
+      const body=$('#grossResults'); const fragment=document.createDocumentFragment();
+      if (!items.length) { const row=document.createElement('tr'), cell=document.createElement('td'); cell.colSpan=headings.length; cell.className='gross-empty'; cell.textContent='Product codes and calculated weights will appear here.'; row.append(cell); fragment.append(row); }
+      for (const item of items) {
+        const row=document.createElement('tr');
+        const code=document.createElement('td'); code.textContent=item.code; code.className='gross-code';
+        const weight=document.createElement('td'); weight.textContent=item.gross||'—';
+        const calculated=prefixes.map((_,index)=>{ const cell=document.createElement('td'); cell.textContent=item.calculated?.[index]||'—'; return cell; });
+        const status=document.createElement('td'); status.textContent=item.status;
+        const source=document.createElement('td');
+        if (item.url) { const link=document.createElement('a'); link.href=item.url; link.target='_blank'; link.rel='noopener noreferrer'; link.textContent='Open product page'; source.append(link); }
+        row.append(code,weight,...calculated,status,source); fragment.append(row);
+      }
+      body.replaceChildren(fragment);
+    }
+    async function pollGross(force=false) {
+      try {
+        const response=checkSession(await fetch('/api/gross/status',{cache:'no-store'}));
+        if (response.status===404) throw new Error('The server is running an older version. Close and restart Image Find, then reload this page.');
+        if (!response.ok) throw new Error('Could not read gross weight results.');
+        const state=await response.json(); const signature=`${state.running}:${state.done}:${state.total}:${state.ready}:${state.error}`;
+        if (!force && signature===lastGrossSignature) return;
+        lastGrossSignature=signature;
+        $('#grossStart').disabled=state.running; $('#grossProgress').hidden=!state.total;
+        $('#grossProgress').max=state.total||1; $('#grossProgress').value=state.done;
+        $('#grossProgressText').textContent=state.total?`${state.done} of ${state.total} codes checked${state.running?' · Searching…':' · Complete'}`:'Start a search to see gross weights.';
+        const found=state.results.filter(item=>item.status==='Found').length;
+        $('#grossSummary').textContent=state.total?`Gross weight found for ${found} of ${state.total} codes.`:'';
+        $('#grossDownload').hidden=!state.ready;
+        if (state.error) { $('#grossMessage').textContent=state.error; $('#grossMessage').classList.add('error'); }
+        renderGrossRows(state.results,state.prefixes||['01','03','06','12']);
+      } catch(error) { $('#grossMessage').textContent=error.message||'Could not connect to the local server.'; $('#grossMessage').classList.add('error'); }
+    }
+    $('#grossForm').addEventListener('submit',async event=>{
+      event.preventDefault(); $('#grossMessage').textContent=''; $('#grossMessage').classList.remove('error');
+      try {
+        const payload={codes:$('#grossCodes').value,base_url:$('#grossUrl').value,prefixes:[...document.querySelectorAll('.gross-prefix')].map(input=>input.value.trim())};
+        const file=$('#grossFile').files[0];
+        if (file) {
+          if (file.size>10*1024*1024) throw new Error('The Excel file must be 10 MB or smaller.');
+          $('#grossMessage').textContent='Uploading workbook…'; $('#grossStart').disabled=true;
+          const bytes=new Uint8Array(await file.arrayBuffer()); let binary='';
+          for (let i=0;i<bytes.length;i+=32768) binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+          payload.file=btoa(binary); payload.column=$('#grossColumn').value;
+        }
+        await post('/api/gross/start',payload);
+        $('#grossMessage').textContent='Search started.'; lastGrossSignature=''; await pollGross(true);
+      } catch(error) { $('#grossMessage').textContent=error.message; $('#grossMessage').classList.add('error'); $('#grossStart').disabled=false; }
+    });
     async function initialize() {
       try {
-        const responses=await Promise.all(['/api/status','/api/country/status','/api/ingredients/status'].map(url=>fetch(url,{cache:'no-store'}).then(checkSession)));
-        const [photo,country,ingredients]=await Promise.all(responses.map(response=>response.json()));
-        const keepCompletedIngredients=ingredients.ready && !ingredients.running && ingredients.total>0 && photo.total===0 && country.total===0;
-        if (!keepCompletedIngredients) await post('/api/reset',{});
-        selected.clear(); lastSignature=''; lastCountrySignature=''; lastIngredientSignature='';
+        const responses=await Promise.all(['/api/status','/api/country/status','/api/ingredients/status','/api/gross/status'].map(url=>fetch(url,{cache:'no-store'}).then(checkSession)));
+        const [photo,country,ingredients,gross]=await Promise.all(responses.map(response=>response.json()));
+        const keepCompletedIngredients=ingredients.ready && !ingredients.running && ingredients.total>0 && photo.total===0 && country.total===0 && gross.total===0;
+        const keepCompletedGross=gross.ready && !gross.running && gross.total>0 && photo.total===0 && country.total===0 && ingredients.total===0;
+        if (!keepCompletedIngredients && !keepCompletedGross) await post('/api/reset',{});
+        selected.clear(); lastSignature=''; lastCountrySignature=''; lastIngredientSignature=''; lastGrossSignature='';
       }
       catch(error) { $('#countryMessage').textContent=error.message; $('#countryMessage').classList.add('error'); }
-      await pollCountry(true); await pollIngredients(true); await poll(true);
-      setInterval(pollCountry,1000); setInterval(pollIngredients,1000); setInterval(poll,850);
+      await pollCountry(true); await pollIngredients(true); await pollGross(true); await poll(true);
+      setInterval(pollCountry,1000); setInterval(pollIngredients,1000); setInterval(pollGross,1000); setInterval(poll,850);
     }
     initialize();
   </script>
