@@ -28,7 +28,7 @@ Në sidebar hap **Gross weight**, shkruaj linkun e webfaqes dhe kodet e produkte
 
 ## Përdorimi
 
-1. Shkruaj path-in absolut të folderit ku do të ruhen fotot, p.sh. `Y:\05_CLIENTS\02_VS\10_DESIGN\02_FEINKOST\18_DANTESSE_PROJECT\300+`.
+1. Kliko **Choose folder** dhe zgjidh dosjen ku do të ruhen fotot. Përdor Chrome ose Edge.
 2. Jep linkun HTTP/HTTPS të webfaqes, qoftë homepage, kategori, faqe kërkimi apo produkt. Programi kërkon kodet në atë webfaqe; një model me `{code}` mund të përdoret kur e ke linkun e saktë të produktit.
 3. Vendos kodet në kutinë e tekstit. **Çdo rresht jo bosh është një produkt i veçantë**:
 

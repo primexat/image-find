@@ -1,6 +1,7 @@
 """Focused checks for code separation and the live-product requirement."""
 
 import unittest
+import base64
 import hashlib
 import http.client
 import json
@@ -15,13 +16,21 @@ from unittest.mock import patch
 from PIL import Image
 
 from image_find import (find_photo_url, image_candidates, inspect_product,
-                          normalize_base_url, page_signals, parse_codes, PhotoJob,
+                          normalize_base_url, page_signals, parse_codes, codes_from_upload, PhotoJob,
                           convert_to_png, convert_to_jpg, photo_filename, product_url, riegel_product_url,
                           search_for_product_url, search_urls, Handler, LOGIN_SALT,
                           wt_product_url)
 
 
 class ImageFindTests(unittest.TestCase):
+    def test_dropped_text_and_csv_import_without_code_count_cap(self):
+        text_data=("Code\n" + "\n".join(str(n) for n in range(2100))).encode()
+        text_codes=codes_from_upload("codes.txt", base64.b64encode(text_data).decode())
+        self.assertEqual(len(text_codes), 2100)
+        self.assertEqual(text_codes[0], "0")
+        csv_data=b"SKU,Name\n001,First\n002,Second\n"
+        self.assertEqual(codes_from_upload("codes.csv", base64.b64encode(csv_data).decode()), ["001", "002"])
+
     def test_login_protects_pages_and_api(self):
         test_hash = hashlib.pbkdf2_hmac("sha256", b"test-password", LOGIN_SALT, 200_000)
         with patch("image_find.LOGIN_EMAIL", "user@example.com"), patch("image_find.LOGIN_HASH", test_hash):
@@ -198,36 +207,35 @@ class ImageFindTests(unittest.TestCase):
             self.assertEqual(image.mode, "RGB")
             self.assertEqual(image.getpixel((10, 10)), (255, 255, 255))
 
-    def test_save_all_can_write_jpg_without_changing_preview(self):
+    def test_export_jpg_and_mark_saved_without_changing_preview(self):
         with TemporaryDirectory() as folder:
-            base = Path(folder)
-            preview = base / "preview.png"
+            preview = Path(folder) / "preview.png"
             preview.write_bytes(convert_to_png(self.image_bytes("WEBP", "RGBA")))
             job = PhotoJob()
-            job.destination = base / "output"
             job.items = [{"index": 0, "code": "209/24", "state": "review", "cache_path": str(preview)}]
-            self.assertEqual(job.save_all("JPG"), {"saved": 1, "existing": 0})
-            target = job.destination / "209%2F24.jpg"
-            with Image.open(target) as image:
+            data, mime = job.export(0, "JPG")
+            self.assertEqual(mime, "image/jpeg")
+            with Image.open(BytesIO(data)) as image:
                 self.assertEqual(image.format, "JPEG")
             self.assertTrue(preview.read_bytes().startswith(b"\x89PNG"))
+            job.mark_saved(0, False)
+            self.assertEqual(job.items[0]["state"], "saved")
 
-    def test_save_all_ignores_skipped_and_missing(self):
+    def test_export_skipped_and_missing_are_unavailable(self):
         with TemporaryDirectory() as folder:
-            base = Path(folder)
-            image = base / "preview.png"
+            image = Path(folder) / "preview.png"
             image.write_bytes(convert_to_png(self.image_bytes("JPEG")))
             job = PhotoJob()
-            job.destination = base / "output"
             job.items = [
-                {"index": 0, "code": "209/24", "state": "review", "cache_path": str(image), "extension": ".png"},
-                {"index": 1, "code": "1111", "state": "skipped", "cache_path": str(image), "extension": ".png"},
+                {"index": 0, "code": "209/24", "state": "review", "cache_path": str(image)},
+                {"index": 1, "code": "1111", "state": "skipped", "cache_path": str(image)},
                 {"index": 2, "code": "2222", "state": "missing"},
             ]
-            self.assertEqual(job.save_all(), {"saved": 1, "existing": 0})
-            self.assertEqual([path.name for path in job.destination.iterdir()], ["209%2F24.png"])
+            self.assertIsNone(job.export(1, "PNG"))
+            self.assertIsNone(job.export(2, "PNG"))
+            job.mark_saved(0, True)
+            self.assertEqual(job.items[0]["state"], "exists")
             self.assertEqual(job.items[1]["state"], "skipped")
-            self.assertFalse(job.saving)
 
     @patch("image_find.inspect_product")
     def test_refresh_reset_clears_photo_results_and_stops_queued_work(self, inspect):
@@ -239,7 +247,7 @@ class ImageFindTests(unittest.TestCase):
         inspect.side_effect = delayed
         with TemporaryDirectory() as folder:
             job = PhotoJob()
-            job.start(folder, "https://shop.example/products/{code}", "\n".join(str(n) for n in range(20)))
+            job.start("https://shop.example/products/{code}", "\n".join(str(n) for n in range(20)))
             self.assertTrue(started.wait(2))
             job.reset()
             self.assertEqual(job.snapshot()["total"], 0)

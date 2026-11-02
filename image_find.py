@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import json
+import csv
 import base64
 import binascii
 import hashlib
 import hmac
 import re
 import secrets
-import shutil
 import sys
 import tempfile
 import threading
 import time
 import webbrowser
-from io import BytesIO
+from io import BytesIO, StringIO
 from http.cookiejar import CookieJar
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from html import unescape
@@ -42,8 +42,6 @@ SESSION_SECONDS = 12 * 60 * 60
 SESSIONS: dict[str, float] = {}
 SESSIONS_LOCK = threading.Lock()
 CODE_PATTERN = re.compile(r"(?=.{1,40}\Z)[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\Z")
-MAX_CODES = 2000
-MAX_IMAGE_BYTES = 15 * 1024 * 1024
 _network = threading.local()
 
 
@@ -54,12 +52,44 @@ def parse_codes(raw: str) -> list[str]:
     codes = [line.strip() for line in raw.splitlines() if line.strip()]
     if not codes:
         raise ValueError("Enter at least one code, one per line.")
-    if len(codes) > MAX_CODES:
-        raise ValueError(f"You can check up to {MAX_CODES} codes per search.")
     invalid = [code for code in codes if not CODE_PATTERN.fullmatch(code)]
     if invalid:
         raise ValueError(f"Code '{invalid[0]}' contains invalid characters.")
     return codes
+
+
+def codes_from_upload(filename: str, encoded_file: str) -> list[str]:
+    """Read product codes from a dropped text, CSV, or Excel file."""
+    if not isinstance(filename, str) or not isinstance(encoded_file, str):
+        raise ValueError("Upload a valid code file.")
+    suffix = Path(filename).suffix.lower()
+    try:
+        data = base64.b64decode(encoded_file, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("Could not read the code file.") from exc
+    if suffix == ".xlsx":
+        from country_find import read_code_rows
+        codes = [code for _, code in read_code_rows(data)]
+    elif suffix in {".txt", ".csv"}:
+        try:
+            content = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            content = data.decode("cp1252")
+        if suffix == ".csv":
+            sample = content[:4096]
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+            except csv.Error:
+                dialect = csv.excel
+            rows = csv.reader(StringIO(content), dialect)
+            codes = [row[0].strip() for row in rows if row and row[0].strip()]
+        else:
+            codes = [line.strip() for line in content.splitlines() if line.strip()]
+        if codes and codes[0].casefold() in {"code", "kodi", "sku"}:
+            codes.pop(0)
+    else:
+        raise ValueError("Use a .txt, .csv, or .xlsx file with product codes.")
+    return parse_codes("\n".join(codes))
 
 
 def normalize_base_url(raw: str) -> str:
@@ -134,7 +164,7 @@ def convert_to_jpg(data: bytes) -> bytes:
         return output.getvalue()
 
 
-def fetch(url: str, *, limit: int = MAX_IMAGE_BYTES, referer: str | None = None) -> tuple[bytes, str]:
+def fetch(url: str, *, limit: int | None = None, referer: str | None = None) -> tuple[bytes, str]:
     headers = {"User-Agent": "Mozilla/5.0 (compatible; ImageFindLocal/1.0)"}
     if referer:
         headers["Referer"] = referer
@@ -143,8 +173,8 @@ def fetch(url: str, *, limit: int = MAX_IMAGE_BYTES, referer: str | None = None)
         _network.opener = build_opener(HTTPCookieProcessor(CookieJar()))
     with _network.opener.open(request, timeout=25) as response:
         content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        body = response.read(limit + 1)
-    if len(body) > limit:
+        body = response.read(limit + 1 if limit is not None else -1)
+    if limit is not None and len(body) > limit:
         raise ValueError("The file is too large.")
     return body, content_type
 
@@ -493,7 +523,6 @@ class PhotoJob:
         self.saving = False
         self.items: list[dict] = []
         self.done = 0
-        self.destination: Path | None = None
         self.cache: tempfile.TemporaryDirectory | None = None
         self.generation = 0
         self.cancel_event = threading.Event()
@@ -504,27 +533,18 @@ class PhotoJob:
         with self.lock:
             return {"running": self.running, "saving": self.saving,
                     "done": self.done, "total": len(self.items),
-                    "destination": str(self.destination) if self.destination else "",
                     "items": [{key: value for key, value in item.items() if key != "cache_path"}
                               for item in self.items]}
 
-    def start(self, destination: str, base_url: str, raw_codes: str) -> None:
+    def start(self, base_url: str, raw_codes: str) -> None:
         codes = parse_codes(raw_codes)
         pattern = normalize_base_url(base_url)
-        if not isinstance(destination, str) or not destination.strip():
-            raise ValueError("Enter the folder where images will be saved.")
-        target = Path(destination.strip()).expanduser()
-        if not target.is_absolute():
-            raise ValueError("Use an absolute path for the image folder.")
-        if target.exists() and not target.is_dir():
-            raise ValueError("The image path must be a folder.")
         with self.lock:
             if self.running or self.saving:
                 raise ValueError("Wait for the current task to finish.")
             if self.cache:
                 self.cache.cleanup()
             self.cache = tempfile.TemporaryDirectory(prefix="image_find_photos_")
-            self.destination = target
             self.items = [{"index": index, "code": code, "state": "waiting", "message": "Pending", "preview": None}
                           for index, code in enumerate(codes)]
             self.done = 0
@@ -593,7 +613,6 @@ class PhotoJob:
                     cache.cleanup()
             self.cache = None
             self.pool = None
-            self.destination = None
             self.items = []
             self.done = 0
             self.running = False
@@ -610,53 +629,27 @@ class PhotoJob:
             return None
         return path.read_bytes(), "image/png"
 
-    def save(self, indexes: list[int], image_format: str = "PNG") -> dict:
-        if not isinstance(indexes, list) or not all(type(index) is int for index in indexes):
-            raise ValueError("The image selection is invalid.")
+    def export(self, index: int, image_format: str) -> tuple[bytes, str] | None:
         if image_format not in {"PNG", "JPG"}:
             raise ValueError("Choose PNG or JPG as the format.")
         with self.lock:
-            if self.running or self.saving:
-                raise ValueError("Wait for the current task to finish.")
-            if self.destination is None:
-                raise ValueError("Start a search first.")
-            chosen = [self.items[index] for index in dict.fromkeys(indexes)
-                      if 0 <= index < len(self.items) and self.items[index]["state"] == "review"]
-            target_dir = self.destination
-            if not chosen:
-                raise ValueError("There are no found images to save.")
-            self.saving = True
-        try:
-            target_dir.mkdir(parents=True, exist_ok=True)
-            if not target_dir.is_dir():
-                raise ValueError("Could not create the image folder.")
-            saved = existing = 0
-            for item in chosen:
-                source = Path(item["cache_path"])
-                extension = ".jpg" if image_format == "JPG" else ".png"
-                target = target_dir / photo_filename(item["code"], extension)
-                if target.exists():
-                    state, message = "exists", "The file already exists and was not overwritten."
-                    existing += 1
-                else:
-                    if image_format == "JPG":
-                        target.write_bytes(convert_to_jpg(source.read_bytes()))
-                    else:
-                        shutil.copyfile(source, target)
-                    state, message = "saved", f"Saved: {target}"
-                    saved += 1
-                with self.lock:
-                    item["state"] = state
-                    item["message"] = message
-            return {"saved": saved, "existing": existing}
-        finally:
-            with self.lock:
-                self.saving = False
+            if type(index) is not int or not 0 <= index < len(self.items) or self.items[index]["state"] != "review":
+                return None
+        preview = self.preview(index)
+        if preview is None:
+            return None
+        body = preview[0]
+        return (convert_to_jpg(body), "image/jpeg") if image_format == "JPG" else (body, "image/png")
 
-    def save_all(self, image_format: str = "PNG") -> dict:
+    def mark_saved(self, index: int, existed: bool) -> None:
         with self.lock:
-            indexes = [item["index"] for item in self.items if item["state"] == "review"]
-        return self.save(indexes, image_format)
+            if self.running or type(index) is not int or not 0 <= index < len(self.items):
+                raise ValueError("The image selection is invalid or the search is still running.")
+            item = self.items[index]
+            if item["state"] != "review":
+                raise ValueError("This image is no longer ready to save.")
+            item["state"] = "exists" if existed else "saved"
+            item["message"] = "The file already exists and was not overwritten." if existed else "Saved in the selected folder."
 
     def review(self, index: int, action: str) -> None:
         if type(index) is not int or action not in {"skip", "reopen"}:
@@ -961,8 +954,8 @@ class Handler(BaseHTTPRequestHandler):
     def request_json(self) -> dict:
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            if size < 1 or size > 14_000_000:
-                raise ValueError("The request is empty or too large.")
+            if size < 1:
+                raise ValueError("The request is empty.")
             data = json.loads(self.rfile.read(size).decode("utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("The submitted data is invalid.")
@@ -1033,13 +1026,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
-        elif path.startswith("/api/preview/"):
+        elif path.startswith("/api/preview/") or path.startswith("/api/export/"):
             try:
                 index = int(path.rsplit("/", 1)[1])
             except ValueError:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            preview = JOB.preview(index)
+            preview = JOB.export(index, urlparse(self.path).query.upper()) if path.startswith("/api/export/") else JOB.preview(index)
             if preview is None:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
@@ -1088,8 +1081,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             data = self.request_json()
             if path == "/api/start":
-                JOB.start(data.get("destination"), data.get("base_url"), data.get("codes"))
+                JOB.start(data.get("base_url"), data.get("codes"))
                 self.send_json({"ok": True, "message": "Search started."})
+            elif path == "/api/import-codes":
+                codes = codes_from_upload(data.get("name"), data.get("file"))
+                self.send_json({"ok": True, "codes": codes})
             elif path == "/api/country/start":
                 COUNTRY_JOB.start(data.get("file"), data.get("base_url"), data.get("column", ""),
                                   data.get("output_column", ""), data.get("language", "EN"))
@@ -1107,12 +1103,9 @@ class Handler(BaseHTTPRequestHandler):
                 INGREDIENT_JOB.reset()
                 GROSS_JOB.reset()
                 self.send_json({"ok": True})
-            elif path == "/api/save":
-                result = JOB.save(data.get("indexes"), data.get("format", "PNG"))
-                self.send_json({"ok": True, **result})
-            elif path == "/api/save-all":
-                result = JOB.save_all(data.get("format", "PNG"))
-                self.send_json({"ok": True, **result})
+            elif path == "/api/mark-saved":
+                JOB.mark_saved(data.get("index"), data.get("existed") is True)
+                self.send_json({"ok": True})
             elif path == "/api/review":
                 JOB.review(data.get("index"), data.get("action"))
                 self.send_json({"ok": True})

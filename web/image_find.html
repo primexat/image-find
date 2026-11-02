@@ -23,11 +23,11 @@
   <header class="masthead"><div class="shell"><div class="brand">image<span>find</span></div><div class="header-actions"><button id="logoutButton" class="button logout" type="button">Log out</button></div></div></header>
   <main class="shell">
     <div id="imageFindView">
-    <div class="intro"><div class="eyebrow">SEARCH AND SAVE</div><h1 id="imageFindHeading" tabindex="-1">Find product images by code.</h1><p>Enter a folder, website URL, and product codes. Each line is one product, even when codes have different lengths.</p></div>
+    <div class="intro"><div class="eyebrow">SEARCH AND SAVE</div><h1 id="imageFindHeading" tabindex="-1">Find product images by code.</h1><p>Choose a folder, enter the website URL, and add product codes. Each line is one product, even when codes have different lengths.</p></div>
     <div class="workspace">
       <form class="panel form-panel" id="searchForm">
         <h2>Search details</h2><p class="helper">Images are saved only after you select them from the results.</p>
-        <div class="field"><label for="destination">Image destination folder</label><input id="destination" type="text" required placeholder="Y:\05_CLIENTS\...\300+" autocomplete="off"><p class="helper">Use an absolute path on this computer. The folder is created when you save an image.</p></div>
+        <div class="field"><label>Image destination folder</label><button id="chooseFolder" class="button" type="button">Choose folder</button><p id="folderName" class="helper">Choose a folder on this computer. Images will be saved there after review.</p></div>
         <div class="field"><label for="baseUrl">Website URL</label><input id="baseUrl" type="url" required placeholder="https://shop.example.com/products" autocomplete="url"><p class="helper">Enter a homepage, category, or search page. The app searches for each code and checks its product page.</p></div>
         <div class="field codes"><label for="codes">Product codes</label><textarea id="codes" required spellcheck="false" placeholder="103210&#10;105423&#10;105424"></textarea><p class="helper">One code per line. Blank lines are ignored; leading zeros are preserved.</p></div>
         <div class="field"><label for="imageFormat">Save images as</label><select id="imageFormat"><option value="PNG">PNG</option><option value="JPG">JPG</option></select><p class="helper">You can change the format after finding images and before saving them.</p></div>
@@ -45,7 +45,7 @@
       <div class="intro"><div class="eyebrow">EXCEL AND PRODUCTS</div><h1 id="countryHeading" tabindex="-1">Find the country for each code.</h1><p>Upload a workbook with product codes and enter the website URL. The download keeps your workbook layout and fills the country column you choose.</p></div>
       <div class="workspace">
         <form class="panel form-panel" id="countryForm">
-          <h2>Search details</h2><p class="helper">The active sheet of an .xlsx file is used. Maximum: 2,000 codes.</p>
+          <h2>Search details</h2><p class="helper">The active sheet of an .xlsx file is used.</p>
           <div class="field"><label for="countryFile">Excel file with codes</label><input id="countryFile" type="file" accept=".xlsx" required><p class="helper">Codes may be numbers or text. Store codes as text in Excel to keep leading zeros.</p></div>
           <div class="field"><label for="countryUrl">Website URL</label><input id="countryUrl" type="url" required placeholder="https://wt.group/en/home"><p class="helper">Use a homepage, search page, or product URL containing {code}.</p></div>
           <div class="field"><label for="countryColumn">Code column (optional)</label><input id="countryColumn" type="text" placeholder="A or Code"><p class="helper">Leave blank to look for “Kodi”, “Code”, or “SKU”; otherwise column A is used.</p></div>
@@ -60,7 +60,7 @@
       <div class="intro"><div class="eyebrow">PRODUCT DETAILS</div><h1 id="ingredientsHeading" tabindex="-1">Find ingredients by product code.</h1><p>Enter product codes and a website URL. Image Find reads the text under “Zutaten” or “Ingredients” on verified product pages and exports the results to Excel.</p></div>
       <div class="workspace">
         <form class="panel form-panel" id="ingredientsForm">
-          <h2>Search details</h2><p class="helper">One product code per line, up to 2,000. The ingredient paragraph is copied in the website's original language.</p>
+          <h2>Search details</h2><p class="helper">One product code per line. The ingredient paragraph is copied in the website's original language.</p>
           <div class="field"><label for="ingredientsUrl">Website URL</label><input id="ingredientsUrl" type="url" required placeholder="https://dantesse.com/" autocomplete="url"><p class="helper">Use a homepage, search page, sample product page, or URL containing {code}.</p></div>
           <div class="field codes"><label for="ingredientsCodes">Product codes</label><textarea id="ingredientsCodes" required spellcheck="false" placeholder="105430&#10;105420"></textarea><p class="helper">Leading zeros are preserved in the Excel output.</p></div>
           <button class="button primary" id="ingredientsStart" type="submit">Find ingredients</button><div id="ingredientsMessage" class="message" role="status" aria-live="polite"></div>
@@ -72,7 +72,7 @@
       <div class="intro"><div class="eyebrow">PRODUCT DETAILS</div><h1 id="grossHeading" tabindex="-1">Find gross weight by product code.</h1><p>Enter a website URL and product codes. Gross weight results appear in a table and can be downloaded as an Excel file.</p></div>
       <div class="workspace">
         <form class="panel form-panel" id="grossForm">
-          <h2>Search details</h2><p class="helper">One product code per line, up to 2,000. The weight and unit are kept as shown on the website.</p>
+          <h2>Search details</h2><p class="helper">One product code per line. The weight and unit are kept as shown on the website.</p>
           <div class="field"><label for="grossUrl">Website URL</label><input id="grossUrl" type="url" required placeholder="https://shop.example.com/" autocomplete="url"><p class="helper">Use a homepage, search page, sample product page, or URL containing {code}.</p></div>
           <div class="field codes"><label for="grossCodes">Product codes</label><textarea id="grossCodes" spellcheck="false" placeholder="105430&#10;105420"></textarea><p class="helper">Paste one code per line, or upload an Excel file below. Leading zeros are preserved in the output.</p></div>
           <div class="field"><label for="grossFile">Excel file with codes (optional)</label><input id="grossFile" type="file" accept=".xlsx"><p class="helper">Use this if Excel cannot copy a large selection. The active sheet is read.</p></div>
@@ -109,22 +109,22 @@
     function showPhoto(item) { $('#photoDialogTitle').textContent=`Image for code ${item.code}`; $('#photoDialogImage').src=item.preview; $('#photoDialogImage').alt=`Full-size image for code ${item.code}`; $('#photoDialog').showModal(); }
     $('#photoDialogClose').addEventListener('click',()=>$('#photoDialog').close());
     $('#photoDialog').addEventListener('click',event=>{ if (event.target===$('#photoDialog')) $('#photoDialog').close(); });
-    let snapshot = {running:false, done:0, total:0, items:[]}, visibleLimit = 60, lastSignature = '';
+    let snapshot = {running:false, done:0, total:0, items:[]}, lastSignature = '', folderHandle = null, clientSaving = false;
     const labels = {waiting:'Pending', review:'Needs review', missing:'Not found', skipped:'Excluded', saved:'Saved', exists:'Already exists', error:'Error'};
     async function post(url, data) { const response = checkSession(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})); if (!response.headers.get('Content-Type')?.includes('application/json')) throw new Error(response.status===404?'The server is running an older version. Save any pending images and restart the app.':'The server returned an invalid response.'); const body = await response.json(); if (!response.ok) throw new Error(body.message || 'The request failed.'); return body; }
     function message(value, isError=false) { const element=$('#formMessage'); element.textContent=value; element.classList.toggle('error',isError); }
     function filteredItems() { const state=$('#stateFilter').value, query=$('#codeFilter').value.trim().toLowerCase(); return snapshot.items.filter(item => (state==='all' || item.state===state || (state==='saved' && item.state==='exists')) && item.code.toLowerCase().includes(query)); }
-    function updateSaveButton() { for (const index of [...selected]) if (snapshot.items[index]?.state !== 'review') selected.delete(index); const busy=snapshot.running||snapshot.saving; const available=snapshot.items.filter(item=>item.state==='review').length; $('#saveSelected').disabled=selected.size===0||busy; $('#saveSelected').textContent=`Save selected (${selected.size})`; $('#saveAll').disabled=available===0||busy; $('#saveAll').textContent=`Save all (${available})`; }
+    function updateSaveButton() { for (const index of [...selected]) if (snapshot.items[index]?.state !== 'review') selected.delete(index); const busy=snapshot.running||snapshot.saving||clientSaving; const available=snapshot.items.filter(item=>item.state==='review').length; $('#saveSelected').disabled=selected.size===0||busy; $('#saveSelected').textContent=`Save selected (${selected.size})`; $('#saveAll').disabled=available===0||busy; $('#saveAll').textContent=`Save all (${available})`; }
     function render() {
-      $('#start').disabled=snapshot.running||snapshot.saving; $('#tools').hidden=snapshot.total===0; $('#progress').hidden=snapshot.total===0; $('#progress').max=snapshot.total||1; $('#progress').value=snapshot.done;
+      $('#start').disabled=snapshot.running||snapshot.saving||clientSaving; $('#tools').hidden=snapshot.total===0; $('#progress').hidden=snapshot.total===0; $('#progress').max=snapshot.total||1; $('#progress').value=snapshot.done;
       $('#progressText').textContent=snapshot.total ? `${snapshot.done} of ${snapshot.total} codes checked${snapshot.running ? ' · Searching…' : snapshot.saving ? ' · Saving images…' : ' · Complete'}` : 'Start a search to see product images.';
       const counts={}; for (const item of snapshot.items) counts[item.state]=(counts[item.state]||0)+1;
       const summary=$('#summary'); summary.replaceChildren();
       for (const [key,text] of [['review','Needs review'],['saved','Saved'],['missing','Not found'],['skipped','Excluded'],['error','Errors']]) { const count=key==='saved' ? (counts.saved||0)+(counts.exists||0) : counts[key]||0; if (!count) continue; const badge=document.createElement('span'); badge.className=key==='review'||key==='saved'?'found':key==='missing'||key==='error'?'missing':'excluded'; badge.textContent=`${text}: ${count}`; summary.append(badge); }
       updateSaveButton(); const filtered=filteredItems(), list=$('#items'); list.replaceChildren();
       if (!snapshot.total || !filtered.length) { const empty=document.createElement('p'); empty.className='empty'; empty.textContent=snapshot.total?'No results match this filter.':'Results and image previews will appear here.'; list.append(empty); }
-      for (const item of filtered.slice(0,visibleLimit)) list.append(createItem(item));
-      $('#showMore').hidden=filtered.length<=visibleLimit; $('#selectVisible').disabled=snapshot.running||snapshot.saving||!filtered.slice(0,visibleLimit).some(item=>item.state==='review');
+      for (const item of filtered) list.append(createItem(item));
+      $('#showMore').hidden=true; $('#selectVisible').disabled=snapshot.running||snapshot.saving||clientSaving||!filtered.some(item=>item.state==='review');
     }
     function createItem(item) {
       const article=document.createElement('article'); article.className='item'; const preview=document.createElement(item.preview?'button':'div'); preview.className='preview';
@@ -138,11 +138,86 @@
       article.append(preview,info); return article;
     }
     async function poll(force=false) { try { const response=checkSession(await fetch('/api/status',{cache:'no-store'})); if (!response.ok) throw new Error('Could not read the current status.'); const next=await response.json(); const signature=`${next.running}:${next.saving}:${next.done}:${next.total}:${next.items.map(item=>item.state).join(',')}`; snapshot=next; if (force||signature!==lastSignature) { lastSignature=signature; render(); } } catch { message('Could not connect to the local server.',true); } }
-    $('#searchForm').addEventListener('submit',async event=>{ event.preventDefault(); message(''); const codes=$('#codes').value, count=codes.split(/\r?\n/).filter(line=>line.trim()).length; if (!count) { message('Enter at least one code.',true); $('#codes').focus(); return; } try { await post('/api/start',{destination:$('#destination').value,base_url:$('#baseUrl').value,codes}); selected.clear(); visibleLimit=60; $('#stateFilter').value='all'; $('#codeFilter').value=''; message(`Search started for ${count} ${count===1?'code':'codes'}.`); await poll(true); } catch(error) { message(error.message,true); } });
-    $('#stateFilter').addEventListener('change',()=>{ visibleLimit=60; render(); }); $('#codeFilter').addEventListener('input',()=>{ visibleLimit=60; render(); }); $('#showMore').addEventListener('click',()=>{ visibleLimit+=60; render(); });
-    $('#selectVisible').addEventListener('click',()=>{ for (const item of filteredItems().slice(0,visibleLimit)) if (item.state==='review') selected.add(item.index); render(); });
-    $('#saveSelected').addEventListener('click',async()=>{ if (!selected.size) return; try { $('#saveSelected').disabled=true; const result=await post('/api/save',{indexes:[...selected],format:$('#imageFormat').value}); selected.clear(); message(`${result.saved} images saved as ${$('#imageFormat').value}. ${result.existing} already existed and were not overwritten.`); await poll(true); } catch(error) { message(error.message,true); updateSaveButton(); } });
-    $('#saveAll').addEventListener('click',async()=>{ if ($('#saveAll').disabled) return; try { $('#saveAll').disabled=true; message('Saving all found images…'); const result=await post('/api/save-all',{format:$('#imageFormat').value}); selected.clear(); message(`${result.saved} images saved as ${$('#imageFormat').value}. ${result.existing} already existed and were not overwritten.`); await poll(true); } catch(error) { message(error.message,true); await poll(true); } });
+    $('#searchForm').addEventListener('submit',async event=>{ event.preventDefault(); message(''); const codes=$('#codes').value, count=codes.split(/\r?\n/).filter(line=>line.trim()).length; if (!count) { message('Enter at least one code.',true); $('#codes').focus(); return; } try { await post('/api/start',{base_url:$('#baseUrl').value,codes}); selected.clear(); $('#stateFilter').value='all'; $('#codeFilter').value=''; message(`Search started for ${count} ${count===1?'code':'codes'}.`); await poll(true); } catch(error) { message(error.message,true); } });
+    $('#stateFilter').addEventListener('change',render); $('#codeFilter').addEventListener('input',render);
+    $('#selectVisible').addEventListener('click',()=>{ for (const item of filteredItems()) if (item.state==='review') selected.add(item.index); render(); });
+    async function importCodeFile(file) {
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      let binary='';
+      for (let i=0;i<bytes.length;i+=32768) binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+      const result=await post('/api/import-codes',{name:file.name,file:btoa(binary)});
+      return result.codes;
+    }
+    $('#imageFindView').addEventListener('dragover',event=>{
+      if ([...event.dataTransfer.types].includes('Files')) event.preventDefault();
+    });
+    $('#imageFindView').addEventListener('drop',async event=>{
+      event.preventDefault();
+      const entries=[...event.dataTransfer.items].filter(item=>item.kind==='file');
+      const handles=entries.map(item=>item.getAsFileSystemHandle?.());
+      try {
+        const resolved=await Promise.all(handles.map(handle=>handle?.catch(()=>null)));
+        const folders=resolved.filter(handle=>handle?.kind==='directory');
+        if (folders.length) {
+          folderHandle=folders[0];
+          $('#folderName').textContent='Selected folder: '+folderHandle.name;
+        }
+        const files=[];
+        for (let i=0;i<entries.length;i++) {
+          if (resolved[i]?.kind==='file') files.push(await resolved[i].getFile());
+          else if (!resolved[i]) {
+            const file=entries[i].getAsFile();
+            if (file && ['txt','csv','xlsx'].includes(file.name.split('.').pop().toLowerCase())) files.push(file);
+          }
+        }
+        const codes=[];
+        for (const file of files) codes.push(...await importCodeFile(file));
+        if (codes.length) $('#codes').value=[$('#codes').value.trim(),...codes].filter(Boolean).join(String.fromCharCode(10));
+        if (folders.length || codes.length) message((folders.length?'Folder selected. ':'')+(codes.length?codes.length+' codes imported from '+files.length+' file(s).':''));
+        else message('Drop a folder or .txt, .csv, or .xlsx code file here.',true);
+      } catch(error) { message(error.message,true); }
+    });
+    async function chooseFolder() {
+      if (!window.showDirectoryPicker) throw new Error('Folder selection requires a recent version of Chrome or Edge.');
+      folderHandle = await window.showDirectoryPicker({mode:'readwrite'});
+      $('#folderName').textContent='Selected folder: '+folderHandle.name;
+    }
+    $('#chooseFolder').addEventListener('click',async()=>{ try { await chooseFolder(); message(''); } catch(error) { if (error.name!=='AbortError') message(error.message,true); } });
+    async function saveImages(indexes) {
+      if (clientSaving) return;
+      if (!folderHandle) await chooseFolder();
+      const permission=await folderHandle.requestPermission({mode:'readwrite'});
+      if (permission!=='granted') throw new Error('Allow access to the selected folder to save images.');
+      const format=$('#imageFormat').value, extension=format==='JPG'?'.jpg':'.png';
+      let saved=0, existing=0, failed=0;
+      clientSaving=true; render();
+      try {
+      for (const index of indexes) {
+        const item=snapshot.items[index];
+        if (!item || item.state!=='review') continue;
+        const name=encodeURIComponent(item.code)+extension;
+        try {
+          let exists=false;
+          try { await folderHandle.getFileHandle(name); exists=true; }
+          catch(error) { if (error.name!=='NotFoundError') throw error; }
+          if (!exists) {
+            const response=checkSession(await fetch('/api/export/'+index+'?'+format,{cache:'no-store'}));
+            if (!response.ok) throw new Error('Could not download image for '+item.code+'.');
+            const handle=await folderHandle.getFileHandle(name,{create:true});
+            const writable=await handle.createWritable();
+            try { await writable.write(await response.blob()); await writable.close(); }
+            catch(error) { await writable.abort(); throw error; }
+          }
+          await post('/api/mark-saved',{index,existed:exists});
+          if (exists) existing++; else saved++;
+          selected.delete(index);
+        } catch(error) { failed++; message('Could not save '+item.code+': '+error.message,true); }
+      }
+      } finally { clientSaving=false; await poll(true); }
+      message(saved+' saved, '+existing+' already existed, '+failed+' failed.'+(failed?' Retry the images still marked Needs review.':''),failed>0);
+    }
+    $('#saveSelected').addEventListener('click',async()=>{ if (!selected.size) return; try { $('#saveSelected').disabled=true; await saveImages([...selected]); } catch(error) { if (error.name!=='AbortError') message(error.message,true); updateSaveButton(); } });
+    $('#saveAll').addEventListener('click',async()=>{ if ($('#saveAll').disabled) return; try { $('#saveAll').disabled=true; await saveImages(snapshot.items.filter(item=>item.state==='review').map(item=>item.index)); } catch(error) { if (error.name!=='AbortError') message(error.message,true); updateSaveButton(); } });
     function syncResultRows(list, items, cache, createRow, emptyText) {
       if (!items.length) {
         if (cache.rows.length || !list.querySelector('.empty')) { const empty=document.createElement('p'); empty.className='empty'; empty.textContent=emptyText; list.replaceChildren(empty); }
@@ -198,7 +273,7 @@
     }
     $('#countryForm').addEventListener('submit',async event=>{
       event.preventDefault(); const file=$('#countryFile').files[0]; if (!file) return;
-      if (file.size>10*1024*1024) { $('#countryMessage').textContent='The Excel file must be 10 MB or smaller.'; $('#countryMessage').classList.add('error'); return; }
+
       $('#countryMessage').textContent='Uploading workbook…'; $('#countryMessage').classList.remove('error'); $('#countryStart').disabled=true;
       try {
         const bytes=new Uint8Array(await file.arrayBuffer()); let binary='';
@@ -279,7 +354,7 @@
         const payload={codes:$('#grossCodes').value,base_url:$('#grossUrl').value,prefixes:[...document.querySelectorAll('.gross-prefix')].map(input=>input.value.trim())};
         const file=$('#grossFile').files[0];
         if (file) {
-          if (file.size>10*1024*1024) throw new Error('The Excel file must be 10 MB or smaller.');
+
           $('#grossMessage').textContent='Uploading workbook…'; $('#grossStart').disabled=true;
           const bytes=new Uint8Array(await file.arrayBuffer()); let binary='';
           for (let i=0;i<bytes.length;i+=32768) binary+=String.fromCharCode(...bytes.subarray(i,i+32768));

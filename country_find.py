@@ -63,8 +63,6 @@ def translate_country(country: str, language: str) -> str:
 
 
 def read_code_rows(data: bytes, column: str = "") -> list[tuple[int, str]]:
-    if len(data) > 10 * 1024 * 1024:
-        raise ValueError("The Excel file is too large (maximum 10 MB).")
     try:
         workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:
@@ -100,8 +98,6 @@ def read_code_rows(data: bytes, column: str = "") -> list[tuple[int, str]]:
             if isinstance(value, float) and value.is_integer():
                 value = int(value)
             codes.append((row_number, str(value).strip()))
-            if len(codes) > 2000:
-                raise ValueError("The maximum is 2,000 codes per workbook.")
         if not codes:
             raise ValueError("No codes were found in the selected column.")
         return codes
